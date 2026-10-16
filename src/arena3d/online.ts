@@ -1,11 +1,24 @@
 import { GENERALS, WEAPONS } from './data';
-import { defaultServerUrl, normalizeServerUrl, type ChatMsg, type NetClient, type PlayerInfo, type RoomInfo, type RoomSummary } from './net';
+import { FIXED_SERVER, defaultServerUrl, normalizeServerUrl, type ChatMsg, type NetClient, type PlayerInfo, type RoomInfo, type RoomSummary } from './net';
 import { loadoutOf, writeSave, type Save3D } from './save';
 import { sfx } from './sfx';
 import { escapeHtml } from './ui';
 
 const NAME_KEY = 'honviet_arena3d_name';
 const URL_KEY = 'honviet_arena3d_server';
+const CODE_KEY = 'honviet_arena3d_code';
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+/** ID bạn bè của máy này: tạo một lần, lưu lại để lần sau vẫn là ID đó. */
+function myCode(): string {
+  try {
+    const saved = localStorage.getItem(CODE_KEY);
+    if (saved && /^HV-[A-Z0-9]{4,6}$/.test(saved)) return saved;
+  } catch {
+    /* không lưu được thì tạo tạm */
+  }
+  return 'HV-' + Array.from({ length: 4 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
+}
 
 export interface StartInfo {
   hostId: string;
@@ -90,6 +103,10 @@ export class OnlineUI {
       if (this.visible) this.build();
     });
     net.on('error', (m) => this.toast(String(m.msg), true));
+    net.on('invite_sent', (m) => this.toast(`Đã gửi lời mời tới ${String(m.name)}.`));
+    net.on('invited', (m) => {
+      if (!this.inGame) this.showInvite(String(m.from), String(m.fromCode), String(m.room));
+    });
     net.on('start', (m) => {
       this.inGame = true;
       this.hide();
@@ -223,6 +240,8 @@ export class OnlineUI {
   private buildConnect(): void {
     const name = localStorage.getItem(NAME_KEY) ?? '';
     const url = localStorage.getItem(URL_KEY) ?? '';
+    const code = myCode();
+    const fixed = !!FIXED_SERVER;
     this.root.innerHTML = `
       <header class="top">
         <div class="brand"><b>CHƠI CÙNG BẠN BÈ</b><small>Vào sảnh ghép trận, chat và đánh quái cùng nhau</small></div>
@@ -231,10 +250,16 @@ export class OnlineUI {
       <div class="center-card panel">
         <h2>Kết nối</h2>
         <label class="field">Tên của bạn<input id="on-name" maxlength="16" value="${escapeHtml(name)}" placeholder="Ví dụ: Hùng" autocomplete="off" /></label>
-        <label class="field">Địa chỉ máy chủ
+        <div class="idbox"><span>ID của bạn</span><b>${escapeHtml(code)}</b></div>
+        <p class="hint-text">Game cấp cho bạn một ID cố định. Gửi ID này cho bạn bè, hoặc nhập ID của họ trong sảnh để mời nhau vào cùng phòng.</p>
+        ${
+          fixed
+            ? '<p class="hint-text">Lần kết nối đầu tiên trong ngày có thể mất tới một phút vì máy chủ cần khởi động.</p>'
+            : `<label class="field">Địa chỉ máy chủ
           <input id="on-url" value="${escapeHtml(url)}" placeholder="${escapeHtml(defaultServerUrl().replace(/^wss?:\/\//, '').replace(/\/ws$/, ''))}" autocomplete="off" />
         </label>
-        <p class="hint-text">Để trống để dùng máy chủ của trang này. Nếu bạn bè chơi cùng bạn, hãy gửi cho họ địa chỉ trang đang mở (ví dụ <b>http://192.168.1.5:5173</b>) rồi cả hai cùng vào sảnh.</p>
+        <p class="hint-text">Để trống để dùng máy chủ của trang này. Chơi trong cùng Wi-Fi thì mở địa chỉ máy chạy game (ví dụ <b>http://192.168.1.5:5173</b>).</p>`
+        }
         <button class="btn gold big" id="on-go">Kết nối</button>
         <div class="toast hidden" id="online-toast"></div>
       </div>`;
@@ -244,13 +269,22 @@ export class OnlineUI {
     const submit = async (): Promise<void> => {
       const nm = nameIn.value.trim();
       if (nm.length < 1) return this.toast('Hãy nhập tên của bạn.', true);
-      const urlRaw = $<HTMLInputElement>('on-url').value.trim();
-      localStorage.setItem(NAME_KEY, nm);
-      localStorage.setItem(URL_KEY, urlRaw);
-      go.disabled = true;
-      go.textContent = 'Đang kết nối...';
+      const urlRaw = fixed ? FIXED_SERVER : $<HTMLInputElement>('on-url').value.trim();
       try {
-        await this.h.net.connect(normalizeServerUrl(urlRaw), nm, loadoutOf(this.h.save));
+        localStorage.setItem(NAME_KEY, nm);
+        if (!fixed) localStorage.setItem(URL_KEY, urlRaw);
+      } catch {
+        /* bỏ qua */
+      }
+      go.disabled = true;
+      go.textContent = fixed ? 'Đang kết nối, có thể mất tới 1 phút...' : 'Đang kết nối...';
+      try {
+        await this.h.net.connect(normalizeServerUrl(urlRaw), nm, loadoutOf(this.h.save), code, fixed ? 70000 : 6000);
+        try {
+          localStorage.setItem(CODE_KEY, this.h.net.code);
+        } catch {
+          /* bỏ qua */
+        }
         this.view = 'hall';
         this.build();
       } catch (e) {
@@ -272,10 +306,13 @@ export class OnlineUI {
     this.root.innerHTML = `
       <header class="top">
         <div class="brand"><b>SẢNH GHÉP TRẬN</b><small>Bạn là <span class="me">${escapeHtml(this.h.net.name)}</span></small></div>
+        ${this.idBoxHtml()}
         <div class="top-right"><span class="gold-chip" id="on-count"></span><button class="btn" id="on-back">Quay lại</button></div>
       </header>
       <div class="online-grid">
         <section class="panel col">
+          <h3>Mời bạn bè bằng ID</h3>
+          <div class="join-box"><input id="inv-code" maxlength="10" placeholder="ID bạn bè, ví dụ HV-4K7Q" autocomplete="off" /><button class="btn gold" id="btn-invite">Mời</button></div>
           <h3>Phòng đang chờ</h3>
           <div class="list" id="room-list"></div>
           <div class="join-box">
@@ -308,6 +345,7 @@ export class OnlineUI {
       if ((e as KeyboardEvent).key === 'Enter') join();
     });
     $('btn-quick').addEventListener('click', () => this.h.net.send({ t: 'quick' }));
+    this.bindIdBox();
     this.bindChatForm();
     this.updateHall();
     this.renderChat();
@@ -348,12 +386,13 @@ export class OnlineUI {
     this.root.innerHTML = `
       <header class="top">
         <div class="brand"><b>PHÒNG ${escapeHtml(r.id)}</b><small>Gửi ID này cho bạn bè để họ vào cùng</small></div>
-        <div class="top-right"><button class="btn gold" id="copy-id">Sao chép ID</button><button class="btn" id="leave">Rời phòng</button></div>
+        <div class="top-right">${this.idBoxHtml()}<button class="btn gold" id="copy-id">Sao chép ID phòng</button><button class="btn" id="leave">Rời phòng</button></div>
       </header>
       <div class="online-grid room">
         <section class="panel col">
           <h3 id="pl-title">Người chơi</h3>
           <div class="list" id="player-list"></div>
+          <div class="join-box"><input id="inv-code" maxlength="10" placeholder="Mời bạn bằng ID, ví dụ HV-4K7Q" autocomplete="off" /><button class="btn gold" id="btn-invite">Mời</button></div>
           <div class="loadout">
             <label class="field">Tướng<select id="sel-general"></select></label>
             <label class="field">Vũ khí<select id="sel-weapon"></select></label>
@@ -392,6 +431,7 @@ export class OnlineUI {
       writeSave(this.h.save);
       this.h.net.send({ t: 'loadout', loadout: loadoutOf(this.h.save) });
     });
+    this.bindIdBox();
     this.bindChatForm();
     this.updateRoom();
     this.renderChat();
@@ -429,6 +469,56 @@ export class OnlineUI {
       actions.innerHTML = `<button class="btn ${me?.ready ? '' : 'gold'} big" id="btn-ready">${me?.ready ? 'Hủy sẵn sàng' : 'Sẵn sàng'}</button>`;
       $('btn-ready').addEventListener('click', () => this.h.net.send({ t: 'ready', v: !me?.ready }));
     }
+  }
+
+  /* ---------- ID bạn bè và lời mời ---------- */
+
+  private idBoxHtml(): string {
+    return `<div class="idbox"><span>ID của bạn</span><b>${escapeHtml(this.h.net.code)}</b><button class="btn" id="copy-code">Sao chép</button></div>`;
+  }
+
+  private bindIdBox(): void {
+    const net = this.h.net;
+    document.getElementById('copy-code')?.addEventListener('click', () => {
+      void navigator.clipboard?.writeText(net.code).then(
+        () => this.toast(`Đã sao chép ID ${net.code}.`),
+        () => this.toast(`ID của bạn: ${net.code}`),
+      );
+    });
+    const input = document.getElementById('inv-code') as HTMLInputElement | null;
+    const invite = (): void => {
+      if (!input) return;
+      let code = input.value.trim().toUpperCase();
+      if (code && !code.startsWith('HV-') && /^[A-Z0-9]{4,6}$/.test(code)) code = `HV-${code}`;
+      if (!/^HV-[A-Z0-9]{4,6}$/.test(code)) return this.toast('ID bạn bè có dạng HV-XXXX.', true);
+      net.send({ t: 'invite', code });
+      input.value = '';
+    };
+    document.getElementById('btn-invite')?.addEventListener('click', invite);
+    input?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') invite();
+    });
+  }
+
+  /** Hộp thoại nhận lời mời vào phòng từ bạn bè. */
+  private showInvite(from: string, fromCode: string, room: string): void {
+    document.getElementById('invite-pop')?.remove();
+    const el = document.createElement('div');
+    el.id = 'invite-pop';
+    el.className = 'invite-pop';
+    el.innerHTML = `<p><b>${escapeHtml(from)}</b> (${escapeHtml(fromCode)}) mời bạn vào phòng <b>${escapeHtml(room)}</b>.</p>
+      <div><button class="btn gold" id="inv-yes">Đồng ý</button><button class="btn" id="inv-no">Từ chối</button></div>`;
+    document.body.appendChild(el);
+    sfx.chat();
+    const close = (): void => el.remove();
+    el.querySelector('#inv-no')!.addEventListener('click', close);
+    el.querySelector('#inv-yes')!.addEventListener('click', () => {
+      close();
+      if (this.inGame) return;
+      this.h.net.send({ t: 'join', id: room });
+      if (!this.visible) this.open();
+    });
+    window.setTimeout(close, 30000);
   }
 
   /* ---------- Chat ---------- */

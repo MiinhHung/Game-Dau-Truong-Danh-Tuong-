@@ -1,0 +1,13 @@
+# Máy chủ sảnh nhiều người (WebSocket) cho Hồn Việt 3D, chạy trên Render.
+# Dùng: Render -> New -> Blueprint -> chọn repo này. Máy chủ vừa phục vụ game vừa là sảnh tại /ws.
+# Sau khi có địa chỉ (ví dụ https://hon-viet-3d.onrender.com), đặt biến môi trường trên Vercel:
+#   VITE_SERVER_URL = wss://hon-viet-3d.onrender.com/ws
+# rồi deploy lại Vercel để trang tự nối vào máy chủ này.
+services:
+  - type: web
+    name: hon-viet-3d
+    runtime: node
+    plan: free
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm run server
+    healthCheckPath: /health

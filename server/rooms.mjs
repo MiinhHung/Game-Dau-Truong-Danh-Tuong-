@@ -18,6 +18,9 @@ const BOARD_MAX = 30;
 const DEFAULT_BOARD_FILE = fileURLToPath(new URL('./data/leaderboard.json', import.meta.url));
 
 const clean = (s, max) => String(s ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max);
+const CODE_RE = /^HV-[A-Z0-9]{4,6}$/;
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const randomCode = () => 'HV-' + Array.from({ length: 4 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
 const roomIdOf = (s) => clean(s, 12).toUpperCase().replace(/[^A-Z0-9_-]/g, '');
 
 function validLoadout(l) {
@@ -94,7 +97,7 @@ export function attachGameServer(httpServer, { path = WS_PATH, log = () => {}, b
     max: MAX_PLAYERS,
     players: r.members.map((id) => {
       const c = clients.get(id);
-      return { id, name: c.name, loadout: c.loadout, ready: c.ready };
+      return { id, name: c.name, code: c.code, loadout: c.loadout, ready: c.ready };
     }),
   });
 
@@ -189,7 +192,15 @@ export function attachGameServer(httpServer, { path = WS_PATH, log = () => {}, b
       case 'hello': {
         c.name = clean(msg.name, 16) || `Khách${c.id}`;
         c.loadout = validLoadout(msg.loadout);
-        send(c, { t: 'welcome', id: c.id, name: c.name, history });
+        // ID bạn bè: máy khách giữ và gửi lại mã cũ; trùng với người đang online hoặc sai dạng thì cấp mã mới
+        let code = clean(msg.code, 10).toUpperCase();
+        const taken = (x) => [...clients.values()].some((o) => o !== c && o.code === x);
+        if (!CODE_RE.test(code) || taken(code)) {
+          do code = randomCode();
+          while (taken(code));
+        }
+        c.code = code;
+        send(c, { t: 'welcome', id: c.id, name: c.name, code, history });
         send(c, { t: 'board', top: topBoard() });
         broadcastLobby();
         log(`+ ${c.name} (${c.id})`);
@@ -231,6 +242,29 @@ export function attachGameServer(httpServer, { path = WS_PATH, log = () => {}, b
       case 'board':
         send(c, { t: 'board', top: topBoard() });
         break;
+      case 'invite': {
+        if (!c.name) break;
+        const code = clean(msg.code, 10).toUpperCase();
+        if (code === c.code) return send(c, { t: 'error', msg: 'Đó là ID của chính bạn.' });
+        const target = [...clients.values()].find((o) => o.code === code && o.name);
+        if (!target) return send(c, { t: 'error', msg: `Không thấy ai đang trực tuyến với ID ${code || '?'}. Bạn bè cần mở game và kết nối trước.` });
+        const tr = target.room && rooms.get(target.room);
+        if (tr && tr.state === 'playing') return send(c, { t: 'error', msg: `${target.name} đang trong trận.` });
+        // chưa có phòng thì tự tạo một phòng riêng rồi mời vào
+        if (!c.room) {
+          let id;
+          do id = Math.random().toString(36).slice(2, 6).toUpperCase();
+          while (rooms.has(id));
+          joinRoom(c, id);
+        }
+        const r = rooms.get(c.room);
+        if (!r || r.state !== 'waiting') return send(c, { t: 'error', msg: 'Bạn đang trong trận, chưa thể mời.' });
+        if (r.members.includes(target.id)) return send(c, { t: 'error', msg: `${target.name} đã ở trong phòng của bạn.` });
+        if (r.members.length >= MAX_PLAYERS) return send(c, { t: 'error', msg: `Phòng đã đủ ${MAX_PLAYERS} người.` });
+        send(target, { t: 'invited', from: c.name, fromCode: c.code, room: r.id });
+        send(c, { t: 'invite_sent', name: target.name });
+        break;
+      }
       case 'join':
         if (c.name) joinRoom(c, msg.id);
         break;

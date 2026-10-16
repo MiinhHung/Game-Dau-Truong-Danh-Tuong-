@@ -11,6 +11,8 @@ export interface Loadout {
 export interface PlayerInfo {
   id: string;
   name: string;
+  /** ID bạn bè của người chơi. */
+  code?: string;
   loadout: Loadout | null;
   ready?: boolean;
 }
@@ -42,6 +44,9 @@ export interface ChatMsg {
 type Msg = { t: string } & Record<string, any>;
 type Handler = (m: Msg) => void;
 
+/** Máy chủ cố định đặt lúc build (biến VITE_SERVER_URL). Có giá trị thì người chơi không cần nhập địa chỉ. */
+export const FIXED_SERVER: string = (import.meta.env.VITE_SERVER_URL as string | undefined)?.trim() ?? '';
+
 export function defaultServerUrl(): string {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   return `${proto}://${location.host}/ws`;
@@ -66,6 +71,8 @@ export function normalizeServerUrl(raw: string): string {
 export class NetClient {
   id = '';
   name = '';
+  /** ID bạn bè (dạng HV-XXXX) do máy chủ xác nhận. */
+  code = '';
   private ws: WebSocket | null = null;
   private handlers = new Map<string, Set<Handler>>();
   private closeHandlers = new Set<(reason: string) => void>();
@@ -85,7 +92,7 @@ export class NetClient {
     this.closeHandlers.add(fn);
   }
 
-  connect(url: string, name: string, loadout: Loadout): Promise<void> {
+  connect(url: string, name: string, loadout: Loadout, code = '', timeoutMs = 6000): Promise<void> {
     this.close();
     return new Promise((resolve, reject) => {
       let settled = false;
@@ -103,8 +110,8 @@ export class NetClient {
           ws.close();
           reject(new Error('Hết thời gian chờ. Kiểm tra địa chỉ máy chủ và đảm bảo máy chủ đang chạy.'));
         }
-      }, 6000);
-      ws.onopen = () => ws.send(JSON.stringify({ t: 'hello', name, loadout }));
+      }, timeoutMs);
+      ws.onopen = () => ws.send(JSON.stringify({ t: 'hello', name, loadout, code }));
       ws.onmessage = (ev) => {
         let m: Msg;
         try {
@@ -117,6 +124,7 @@ export class NetClient {
           window.clearTimeout(timer);
           this.id = m.id;
           this.name = m.name;
+          this.code = String(m.code ?? '');
           resolve();
         }
         this.handlers.get(m.t)?.forEach((fn) => fn(m));

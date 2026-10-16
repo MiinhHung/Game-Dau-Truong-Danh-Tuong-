@@ -211,6 +211,10 @@ Bạn bè mở `http://<địa-chỉ-IP-máy-bạn>:8787`. Windows có thể h�
 
 **Chơi qua Internet:** máy chủ phải truy cập được từ ngoài. Có hai cách: dùng dịch vụ đường hầm (tunnel) trỏ vào cổng 5173 hoặc 8787 của máy bạn, hoặc đưa thư mục dự án lên một máy chủ có Node.js rồi chạy `npm run server`. Nếu trang web dùng https thì cần đặt máy chủ sau proxy hỗ trợ wss. Phần này mình chưa thử trên Internet thật, chỉ thử trong máy.
 
+**ID bạn bè và lời mời:** mỗi người chơi được cấp một ID cố định dạng `HV-XXXX` (lưu trên trình duyệt, hiện trong sảnh và phòng chờ). Nhập ID của bạn mình vào ô "Mời bạn bè bằng ID" rồi bấm **Mời**: bạn kia nhận hộp thoại, bấm Đồng ý là vào cùng phòng (chưa có phòng thì máy chủ tự tạo). ID chỉ để định danh, không phải tài khoản có mật khẩu.
+
+**Đưa lên Internet (Vercel + Render):** Vercel chỉ đăng phần web tĩnh nên không chạy được sảnh WebSocket. Triển khai máy chủ lên Render bằng file `render.yaml` có sẵn (New → Blueprint → chọn repo). Khi có địa chỉ, ví dụ `https://hon-viet-3d.onrender.com`, vào Vercel → Settings → Environment Variables, thêm `VITE_SERVER_URL = wss://hon-viet-3d.onrender.com/ws` rồi Redeploy. Từ đó trang Vercel tự nối vào máy chủ này và người chơi không phải nhập địa chỉ. Gói miễn phí của Render sẽ "ngủ" khi lâu không có ai, nên lần kết nối đầu tiên có thể mất tới một phút.
+
 **Cách hoạt động:** máy chủ sảnh chỉ quản lý phòng, chat và chuyển tiếp dữ liệu. Chủ phòng chạy toàn bộ mô phỏng trận (quái, sát thương, vàng rơi) và gửi hình ảnh trận cho bạn bè 15 lần mỗi giây. Bạn bè tự điều khiển nhân vật của mình tại máy và gửi vị trí, hướng nhắm, thao tác về cho chủ phòng. Vì vậy chủ phòng thoát giữa trận thì trận kết thúc, còn bạn bè thoát thì trận vẫn tiếp tục.
 
 ## Lưu game

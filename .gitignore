@@ -4,3 +4,5 @@ dist/
 *.log
 server/data/
 .claude/
+.vercel
+.env*
