@@ -158,22 +158,34 @@ export const WEAPONS: Weapon[] = [
 export const MAX_WEAPON_LEVEL = 5;
 
 /** Kỹ năng phụ (phím E) của từng tướng, hồi chiêu ngắn hơn chiêu cuối Q. */
+export type EAim = 'self' | 'line' | 'cone' | 'circle';
+
 export interface ESkill {
   name: string;
   desc: string;
   cd: number;
+  /** Cách nhắm: tự thi triển, đường thẳng, hình quạt, hoặc điểm rơi hình tròn. */
+  aim: EAim;
+  /** Tầm thi triển (đường thẳng, quạt: chiều dài; vòng tròn: tầm tối đa tới điểm chọn). */
+  range: number;
+  /** Bề ngang đường thẳng, hoặc bán kính vùng nổ của kỹ năng vòng tròn. */
+  size?: number;
+  /** Nửa góc mở của hình quạt (radian). */
+  half?: number;
+  /** Giữ chuột để tụ lực tối đa bao nhiêu giây; chiều dài cộng thêm khi đầy lực. */
+  charge?: { sec: number; extra: number };
 }
 
 export const ESKILLS: Record<string, ESkill> = {
-  tran_hung_dao: { name: 'Hịch Tướng Sĩ', desc: 'Cả đội trong tầm 14 tăng 25% sát thương trong 6 giây.', cd: 14 },
-  quang_trung: { name: 'Hỏa Pháo', desc: 'Bắn một loạt đại bác nổ vùng phía trước, đốt cháy quái 3 giây.', cd: 9 },
-  le_loi: { name: 'Kim Quang Hộ Thể', desc: 'Giảm 60% sát thương nhận vào trong 4 giây.', cd: 16 },
-  hai_ba_trung: { name: 'Cồng Mê Linh', desc: 'Hồi 30% máu tối đa cho bạn và đồng đội trong tầm 10.', cd: 18 },
-  ba_trieu: { name: 'Cuồng Phong', desc: 'Hai vòng lốc xoáy liên tiếp, làm choáng quái xung quanh 1 giây.', cd: 9 },
-  ngo_quyen: { name: 'Cọc Nhọn', desc: 'Cắm cọc nhọn tại điểm chuột chỉ, gây sát thương và làm choáng 1,2 giây.', cd: 11 },
-  nguyen_trai: { name: 'Mưu Kế Phục Binh', desc: 'Đặt bẫy tại điểm chuột chỉ (tầm 18): quái trong vùng bị sát thương, choáng 1,5 giây và chậm 50% trong 3 giây.', cd: 13 },
-  phu_dong: { name: 'Roi Sắt Quét', desc: 'Vung roi sắt quét một cung phía trước tầm 9, hất văng và làm choáng quái 0,6 giây.', cd: 10 },
-  ly_thuong_kiet: { name: 'Sóng Âm Đẩy Lùi', desc: 'Đẩy lùi mạnh quái trong tầm 9, làm chậm 50% và hoảng sợ 1 giây.', cd: 10 },
+  tran_hung_dao: { name: 'Hỏa Thuyền Phá Trận', desc: 'Triệu hồi đội thuyền lửa lao thẳng theo hướng chỉ định, để lại đường lửa dài. Kẻ địch trúng đòn chịu sát thương và bị thiêu đốt 3 giây.', cd: 12, aim: 'line', range: 20, size: 5 },
+  quang_trung: { name: 'Hỏa Pháo', desc: 'Pháo kích điểm chỉ định, tầm xa tới 16. Nổ vùng, đốt cháy quái 3 giây.', cd: 9, aim: 'circle', range: 16, size: 5.5 },
+  le_loi: { name: 'Kim Quang Hộ Thể', desc: 'Giảm 60% sát thương nhận vào trong 4 giây và tạo lá chắn bao quanh, hấp thụ lượng sát thương bằng 40% máu tối đa.', cd: 16, aim: 'self', range: 0 },
+  hai_ba_trung: { name: 'Cồng Mê Linh', desc: 'Dấu cộng xanh lá xoay quanh người, hồi 30% máu tối đa cho bạn và đồng đội trong tầm 10.', cd: 18, aim: 'self', range: 0 },
+  ba_trieu: { name: 'Cuồng Phong Chưởng', desc: 'Tung luồng chưởng phong hình quạt về phía trước, gây sát thương và đẩy lùi. Giữ chuột để tụ lực: bay xa hơn, mạnh hơn.', cd: 9, aim: 'cone', range: 8, half: 0.62, charge: { sec: 1.2, extra: 7 } },
+  ngo_quyen: { name: 'Thủy Long Xung Kích', desc: 'Làn sóng nước hình rồng lao thẳng về phía trước, gây sát thương và hất tung mọi kẻ địch trúng phải.', cd: 11, aim: 'line', range: 18, size: 4.5 },
+  nguyen_trai: { name: 'Quân Trung Từ Mệnh', desc: 'Phóng ba luồng chữ khí xuyên qua mọi kẻ địch trên đường bay. Trúng đủ 3 lần sẽ rơi vào trạng thái Dao Động, gây ít sát thương hơn 40% trong 6 giây.', cd: 10, aim: 'line', range: 18, size: 2.4 },
+  phu_dong: { name: 'Thần Tre Giáng Thế', desc: 'Cây tre khổng lồ từ trên cao giáng xuống điểm chỉ định (tầm 14), gây sát thương diện rộng và làm choáng 1,6 giây.', cd: 12, aim: 'circle', range: 14, size: 5 },
+  ly_thuong_kiet: { name: 'Xây Thành Thăng Long', desc: 'Dựng thành lũy tại điểm chỉ định (tầm 12) trong 5 giây. Đồng minh bên trong hồi máu theo thời gian, nhận ít hơn 40% sát thương, và kẻ địch đánh vào sẽ bị phản lại một phần sát thương.', cd: 16, aim: 'circle', range: 12, size: 4.5 },
 };
 
 /** Cấp +5: vũ khí tiến hóa, đổi sang ánh vàng và có thêm sức mạnh riêng. */

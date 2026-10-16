@@ -86,6 +86,10 @@ export interface Actor {
   eSeq: number;
   dmgBuffUntil: number;
   guardUntil: number;
+  /** Tụ lực của kỹ năng E (0..1) và lá chắn hấp thụ sát thương (Lê Lợi). */
+  eCharge: number;
+  shield: number;
+  shieldUntil: number;
   /** Giây đồng đội đã đứng cạnh để cứu (khi gục). */
   reviveT: number;
   reviveFx?: number;
@@ -159,6 +163,8 @@ export interface Mon {
   burnOwner: Actor | null;
   goldMarkUntil: number;
   burning?: boolean;
+  /** Bị hất tung đến thời điểm này (chỉ để hiển thị). */
+  airUntil?: number;
   dmgMul: number;
   speedMul: number;
   baseScale: number;

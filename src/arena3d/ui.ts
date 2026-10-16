@@ -396,7 +396,7 @@ export class LobbyUI {
         <div class="list" id="lobby-list"></div>
       </aside>
       <aside class="panel info" id="lobby-info"></aside>
-      <div class="play-wrap"><button class="btn big friends" id="online-btn">Chơi cùng bạn bè</button><button class="play" id="play">Vào trận</button><small>Chuột trái hoặc Space: đánh. WASD: di chuyển. Shift: lướt. Q: chiêu cuối. Cuộn chuột: zoom gần xa.</small></div>
+      <div class="play-wrap"><button class="btn big friends" id="online-btn">Chơi cùng bạn bè</button><button class="play" id="play">Vào trận</button><small>Chuột trái hoặc Space: đánh. WASD: di chuyển. Shift: lướt. Q: chiêu cuối. E: kỹ năng phụ (hiện vòng nhắm, bấm chuột trái để tung, E hoặc Esc để hủy). Cuộn chuột: zoom gần xa.</small></div>
       <div class="toast hidden" id="lobby-toast"></div>`;
     root.querySelectorAll<HTMLButtonElement>('#lobby-tabs button').forEach((b) =>
       b.addEventListener('click', () => {

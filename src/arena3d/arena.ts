@@ -13,7 +13,7 @@ import { loadoutOf, writeSave, type Save3D } from './save';
 import { sfx, resumeAudio, type SfxName } from './sfx';
 import { computeStats, type StatSource } from './stats';
 import { animateSwamp, buildSwamp } from './swamp';
-import { makeESkillFx } from './eskillFx';
+import { AimIndicator, makeESkillFx } from './eskillFx';
 import { BIOMES, biomeIndexForWave } from './biomes';
 import { ARENA_R, buildArenaWorld, type ArenaWorld } from './world';
 import {
@@ -146,6 +146,17 @@ export class Arena {
   private keys = new Set<string>();
   private mouse = new THREE.Vector2(0, 0);
   private mouseDown = false;
+  /** Kỹ năng E định hướng: đang hiện vòng nhắm, tụ lực, và chặn đòn đánh thường sau khi xác nhận. */
+  private eAiming = false;
+  private eAimTouch = false;
+  private eWasDown = false;
+  private eMouseWas = false;
+  private eCharging = 0;
+  private eSuppress = false;
+  private aimInd: AimIndicator | null = null;
+  /** Thành lũy Lý Thường Kiệt đang dựng, và số lần Nguyễn Trãi đã trúng mỗi quái (chủ phòng). */
+  private forts: { pos: THREE.Vector3; r: number; until: number; tick: number; owner: Actor }[] = [];
+  private shaken = new WeakMap<Mon, number>();
   private ray = new THREE.Raycaster();
   private plane = new THREE.Plane(UP, 0);
 
@@ -249,6 +260,7 @@ export class Arena {
   setPaused(p: boolean): void {
     if (this.online) return; // trận nhiều người không thể tạm dừng
     this.paused = p;
+    this.cancelEAim();
     if (p) this.keys.clear();
     this.mouseDown = false;
   }
@@ -275,6 +287,8 @@ export class Arena {
   }
 
   private clearAll(): void {
+    this.forts = [];
+    this.cancelEAim();
     for (const a of this.actors.values()) this.scene.remove(a.root, a.shadow);
     this.actors.clear();
     for (const s of this.summons) this.scene.remove(s.root, s.shadow);
@@ -416,6 +430,9 @@ export class Arena {
       eSeq: 0,
       dmgBuffUntil: 0,
       guardUntil: 0,
+      eCharge: 0,
+      shield: 0,
+      shieldUntil: 0,
       reviveT: 0,
       level: 1,
       xp: 0,
@@ -502,7 +519,22 @@ export class Arena {
 
   private hurtActor(a: Actor, amount: number, from?: THREE.Vector3): void {
     if (!a.alive || this.over || this.time < a.invulnUntil || a.dashT > 0) return;
-    let dmg = Math.max(1, Math.round(amount * (1 - a.stats.reduce) * (a.guardUntil > this.time ? 0.4 : 1)));
+    const fort = this.inFort(a);
+    let dmg = Math.max(1, Math.round(amount * (1 - a.stats.reduce) * (a.guardUntil > this.time ? 0.4 : 1) * (fort ? 0.6 : 1)));
+    if (fort && from) {
+      const hit = this.mons.find((m) => !m.dead && m.pos.distanceTo(from) < 2.5);
+      if (hit) this.damageMon(hit, amount * 0.5, a.pos, 3, this.forts[0]?.owner ?? a, false);
+    }
+    if (a.shield > 0 && this.time < a.shieldUntil) {
+      const soak = Math.min(a.shield, dmg);
+      a.shield -= soak;
+      dmg -= soak;
+      if (dmg <= 0) {
+        a.invulnUntil = this.time + 0.3;
+        this.popAt(a.pos, 'Hấp thụ', 'heal', 2.2);
+        return;
+      }
+    }
     a.hp -= dmg;
     a.invulnUntil = this.time + 0.55;
     a.flashHurt = 0.2;
@@ -1648,14 +1680,14 @@ export class Arena {
   }
 
   /** Hiệu ứng riêng của kỹ năng E từng tướng, chạy ở máy này và phát cho đồng đội. */
-  private fxE(id: string, x: number, z: number, dx: number, dz: number): void {
-    const fx = makeESkillFx(id, this.scene, x, z, dx, dz);
+  private fxE(id: string, x: number, z: number, dx: number, dz: number, p = 0): void {
+    const fx = makeESkillFx(id, this.scene, x, z, dx, dz, p);
     if (fx) this.fxs.push(fx);
   }
 
-  private emitE(id: string, x: number, z: number, dx: number, dz: number): void {
-    this.fxE(id, x, z, dx, dz);
-    this.emit(['e', id, r2(x), r2(z), r2(dx), r2(dz)]);
+  private emitE(id: string, x: number, z: number, dx: number, dz: number, p = 0): void {
+    this.fxE(id, x, z, dx, dz, p);
+    this.emit(['e', id, r2(x), r2(z), r2(dx), r2(dz), r2(p)]);
   }
 
   private stake(x: number, z: number): void {
@@ -2487,6 +2519,10 @@ export class Arena {
     this.updateRevive(dt);
     for (const m of this.mons) if (!m.dead) this.updateMon(m, dt);
     this.mons = this.mons.filter((m) => !m.dead);
+    for (const m of this.mons) {
+      if (m.airUntil && this.time < m.airUntil) m.rig.group.position.y = Math.sin(Math.PI * (1 - (m.airUntil - this.time) / 0.9)) * 3.2;
+    }
+    this.updateForts(dt);
     this.updateProjs(dt);
     this.updateZones(dt);
     this.updateClouds(dt);
@@ -2536,9 +2572,10 @@ export class Arena {
       if (!typing()) {
         if (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || touch.dash) this.doDash(a);
         if (this.keys.has('KeyQ') || touch.q) this.pressUlt(a);
-        if (this.keys.has('KeyE') || touch.e) this.pressE(a);
-      }
-      const holding = !typing() && (this.mouseDown || this.keys.has('Space') || touch.attack);
+        this.updateEAim(a, dt);
+      } else this.cancelEAim();
+      if (!this.mouseDown) this.eSuppress = false;
+      const holding = !typing() && ((this.mouseDown && !this.eAiming && !this.eSuppress) || this.keys.has('Space') || touch.attack);
       a.hold = holding;
       if (holding) {
         if (this.role === 'client') this.clientAttack(a);
@@ -2553,7 +2590,62 @@ export class Arena {
     } else {
       a.moving = false;
       a.hold = false;
+      this.cancelEAim();
     }
+  }
+
+  private cancelEAim(): void {
+    this.eAiming = false;
+    this.eCharging = 0;
+    this.aimInd?.hide();
+  }
+
+  /**
+   * Kỹ năng E định hướng: nhấn E để hiện vòng chọn tầm (kiểu MOBA), rê chuột để chỉnh hướng,
+   * nhấn chuột trái để thi triển (Bà Triệu: giữ chuột để tụ lực, thả để tung). E hoặc Esc để hủy.
+   * Cảm ứng: giữ nút E để nhắm tự động, thả tay để thi triển.
+   */
+  private updateEAim(a: Actor, dt: number): void {
+    const es = ESKILLS[a.stats.general.id];
+    const down = this.keys.has('KeyE') || touch.e;
+    const rising = down && !this.eWasDown;
+    const falling = !down && this.eWasDown;
+    this.eWasDown = down;
+    const clickDown = this.mouseDown && !this.eMouseWas;
+    const clickUp = !this.mouseDown && this.eMouseWas;
+    this.eMouseWas = this.mouseDown;
+    if (!es) return;
+    if (es.aim === 'self') {
+      if (rising) this.pressE(a);
+      return;
+    }
+    const cast = (): void => {
+      a.eCharge = Math.max(0, Math.min(1, this.eCharging / (es.charge?.sec ?? 1)));
+      this.cancelEAim();
+      this.eSuppress = true;
+      this.pressE(a);
+    };
+    if (!this.eAiming) {
+      if (rising && this.time >= a.eReady) {
+        this.eAiming = true;
+        this.eAimTouch = touch.e;
+        this.eCharging = 0;
+        this.eSuppress = true;
+      }
+      if (!this.eAiming) return;
+    } else if (rising && !this.eAimTouch) {
+      this.cancelEAim();
+      return;
+    } else if (this.keys.has('Escape')) {
+      this.cancelEAim();
+      return;
+    }
+    if (!this.aimInd) this.aimInd = new AimIndicator(this.scene);
+    if (es.charge && (this.eAimTouch ? touch.e : this.mouseDown)) this.eCharging = Math.min(es.charge.sec, this.eCharging + dt);
+    this.aimInd.show(es, a.pos, a.aim, es.charge ? this.eCharging / es.charge.sec : 0);
+    if (this.eAimTouch) {
+      if (falling) cast();
+    } else if (es.charge ? clickUp : clickDown) cast();
   }
 
   private pressE(a: Actor): void {
@@ -2566,7 +2658,56 @@ export class Arena {
     } else this.doE(a);
   }
 
-  /** Chủ phòng và chơi một mình: kỹ năng phụ E riêng của từng tướng. */
+  /** Quái trong hình chữ nhật: bắt đầu từ o, hướng d, dài len, rộng width. Trả về kèm khoảng cách dọc đường. */
+  private inRect(o: THREE.Vector3, d: THREE.Vector3, len: number, width: number): { m: Mon; t: number }[] {
+    const out: { m: Mon; t: number }[] = [];
+    for (const m of this.mons) {
+      if (m.dead) continue;
+      const vx = m.pos.x - o.x;
+      const vz = m.pos.z - o.z;
+      const t = vx * d.x + vz * d.z;
+      const side = Math.abs(vx * d.z - vz * d.x);
+      if (t > -m.def.radius && t < len + m.def.radius && side < width / 2 + m.def.radius) out.push({ m, t: Math.max(0, t) });
+    }
+    return out;
+  }
+
+  /** Điểm rơi của kỹ năng vòng tròn: vị trí chuột kẹp trong tầm range từ chân người chơi. */
+  private eTarget(a: Actor, range: number): THREE.Vector3 {
+    const v = new THREE.Vector3(a.aim.x - a.pos.x, 0, a.aim.z - a.pos.z);
+    const len = v.length();
+    if (len > range) v.multiplyScalar(range / len);
+    const c = new THREE.Vector3(a.pos.x + v.x, 0, a.pos.z + v.z);
+    const rr = Math.hypot(c.x, c.z);
+    const lim = ARENA_R - 1.5;
+    if (rr > lim) c.multiplyScalar(lim / rr);
+    return c;
+  }
+
+  private inFort(a: Actor): boolean {
+    return this.forts.some((f) => this.time < f.until && Math.hypot(a.pos.x - f.pos.x, a.pos.z - f.pos.z) < f.r);
+  }
+
+  /** Thành lũy của Lý Thường Kiệt: hồi máu đồng minh bên trong (giảm sát thương và phản đòn xử lý ở hurtActor). */
+  private updateForts(dt: number): void {
+    if (this.forts.length === 0) return;
+    for (const f of this.forts) {
+      f.tick -= dt;
+      if (f.tick > 0) continue;
+      f.tick = 0.5;
+      for (const pl of this.actors.values()) {
+        if (!pl.alive || this.time >= f.until || Math.hypot(pl.pos.x - f.pos.x, pl.pos.z - f.pos.z) >= f.r) continue;
+        const heal = Math.max(1, Math.round(pl.stats.maxHp * 0.03));
+        if (pl.hp < pl.stats.maxHp) {
+          pl.hp = Math.min(pl.stats.maxHp, pl.hp + heal);
+          this.popAt(pl.pos, `+${heal}`, 'heal', 2.6);
+        }
+      }
+    }
+    this.forts = this.forts.filter((f) => this.time < f.until);
+  }
+
+  /** Chủ phòng và chơi một mình: kỹ năng phụ E riêng của từng tướng. Hướng và điểm rơi lấy từ vị trí nhắm lúc xác nhận. */
   private doE(a: Actor): void {
     const es = ESKILLS[a.stats.general.id];
     if (!es || !a.alive || this.time < a.eReady) return;
@@ -2574,32 +2715,42 @@ export class Arena {
     this.popAt(a.pos, es.name, 'crit', 3.6);
     this.playSfx('boom');
     const near = (p: THREE.Vector3, r: number): Mon[] => this.mons.filter((m) => !m.dead && m.pos.distanceTo(p) < r + m.def.radius);
-    const eid = a.stats.general.id;
-    const edir = this.aimDir(a);
-    const efx = eid === 'ngo_quyen' || eid === 'nguyen_trai' ? this.swampCenter(a) : a.pos;
-    this.emitE(eid, efx.x, efx.z, edir.x, edir.z);
+    const dir = this.aimDir(a);
+    const from = a.pos.clone().setY(0);
     switch (a.stats.general.id) {
-      case 'tran_hung_dao':
-        for (const pl of this.actors.values()) {
-          if (!pl.alive || pl.pos.distanceTo(a.pos) > 14) continue;
-          pl.dmgBuffUntil = this.time + 6;
-          this.burst(pl.pos.clone().setY(1.2), 0xffd24a, 12, 5, 0.9);
+      case 'tran_hung_dao': {
+        this.emitE('tran_hung_dao', from.x, from.z, dir.x, dir.z);
+        this.addShake(0.4);
+        for (const { m, t } of this.inRect(from, dir, es.range, es.size ?? 5)) {
+          this.later(t / 22, () => {
+            if (m.dead) return;
+            this.damageMon(m, 75, from, 5, a);
+            if (!m.dead) this.applyBurn(m, 3, a);
+          });
         }
         break;
+      }
       case 'quang_trung': {
-        const c = a.pos.clone().addScaledVector(this.aimDir(a), 6).setY(0);
-        this.later(0.5, () => this.burst(c.clone().setY(1), 0xff6a20, 30, 10, 1.2));
-        this.addShake(0.5);
-        for (const m of near(c, 5.5)) {
-          this.damageMon(m, 70, c, 9, a);
-          if (!m.dead) this.applyBurn(m, 3, a);
-        }
+        const c = this.eTarget(a, es.range);
+        this.emitE('quang_trung', c.x, c.z, from.x, from.z);
+        this.later(0.6, () => {
+          this.burst(c.clone().setY(1), 0xff6a20, 30, 10, 1.2);
+          this.addShake(0.5);
+          for (const m of near(c, es.size ?? 5.5)) {
+            this.damageMon(m, 75, c, 9, a);
+            if (!m.dead) this.applyBurn(m, 3, a);
+          }
+        });
         break;
       }
       case 'le_loi':
         a.guardUntil = this.time + 4;
+        a.shield = Math.round(a.stats.maxHp * 0.4);
+        a.shieldUntil = this.time + 4;
+        this.emitE('le_loi', from.x, from.z, dir.x, dir.z);
         break;
       case 'hai_ba_trung':
+        this.emitE('hai_ba_trung', from.x, from.z, dir.x, dir.z);
         for (const pl of this.actors.values()) {
           if (!pl.alive || pl.pos.distanceTo(a.pos) > 10) continue;
           const heal = Math.round(pl.stats.maxHp * 0.3);
@@ -2607,52 +2758,87 @@ export class Arena {
           this.popAt(pl.pos, `+${heal}`, 'heal', 2.6);
         }
         break;
-      case 'ba_trieu':
-        this.whirlwind(a);
-        this.later(0.35, () => this.whirlwind(a));
-        for (const m of near(a.pos, 8)) this.applyStun(m, 1);
+      case 'ba_trieu': {
+        const ch = Math.max(0, Math.min(1, a.eCharge));
+        const len = es.range + (es.charge?.extra ?? 0) * ch;
+        const half = es.half ?? 0.6;
+        this.emitE('ba_trieu', from.x, from.z, dir.x, dir.z, ch);
+        this.addShake(0.3 + ch * 0.4);
+        const base = Math.atan2(dir.x, dir.z);
+        for (const m of near(from, len)) {
+          const v = new THREE.Vector3().subVectors(m.pos, from).setY(0);
+          const d = v.length();
+          if (d > 2) {
+            let ang = Math.abs(Math.atan2(v.x, v.z) - base);
+            if (ang > Math.PI) ang = Math.PI * 2 - ang;
+            if (ang > half) continue;
+          }
+          this.later(d / 22, () => {
+            if (m.dead) return;
+            this.damageMon(m, 55 + 65 * ch, from, 9 + 9 * ch, a);
+          });
+        }
         break;
+      }
       case 'ngo_quyen': {
-        const c = this.swampCenter(a);
-        for (let i = 0; i < 6; i++) this.stake(c.x + (Math.random() - 0.5) * 7, c.z + (Math.random() - 0.5) * 7);
-        for (const m of near(c, 4.5)) {
-          this.damageMon(m, 85, c, 4, a);
-          if (!m.dead) this.applyStun(m, 1.2);
+        this.emitE('ngo_quyen', from.x, from.z, dir.x, dir.z);
+        this.addShake(0.5);
+        for (const { m, t } of this.inRect(from, dir, es.range, es.size ?? 4.5)) {
+          this.later(t / 20, () => {
+            if (m.dead) return;
+            this.damageMon(m, 80, from, 7, a);
+            if (m.dead) return;
+            this.applyStun(m, 1);
+            m.airUntil = this.time + 0.9;
+          });
         }
         break;
       }
       case 'nguyen_trai': {
-        const c = this.swampCenter(a);
-        for (const m of near(c, 5.5)) {
-          this.damageMon(m, 45, c, 3, a);
-          if (!m.dead) {
-            this.applyStun(m, 1.5);
-            this.applySlow(m, 3, 0.5);
+        this.emitE('nguyen_trai', from.x, from.z, dir.x, dir.z);
+        for (let i = 0; i < 3; i++) {
+          for (const { m, t } of this.inRect(from, dir, es.range, es.size ?? 2.4)) {
+            this.later(i * 0.18 + t / 32, () => {
+              if (m.dead) return;
+              this.damageMon(m, 30, from, 1.5, a);
+              if (m.dead) return;
+              const n = (this.shaken.get(m) ?? 0) + 1;
+              if (n >= 3) {
+                this.shaken.delete(m);
+                m.dmgMul *= 0.6;
+                this.popAt(m.pos, 'Dao Động', 'crit', 2.8);
+                this.later(6, () => {
+                  m.dmgMul /= 0.6;
+                });
+              } else this.shaken.set(m, n);
+            });
           }
         }
         break;
       }
       case 'phu_dong': {
-        const dir = this.aimDir(a);
-        this.addShake(0.4);
-        for (const m of near(a.pos, 9)) {
-          const v = new THREE.Vector3().subVectors(m.pos, a.pos).setY(0);
-          const ang = Math.abs(Math.atan2(v.x, v.z) - Math.atan2(dir.x, dir.z));
-          if (Math.min(ang, Math.PI * 2 - ang) > 1.2 && v.length() > 2) continue;
-          this.damageMon(m, 95, a.pos, 13, a);
-          if (!m.dead) this.applyStun(m, 0.6);
-        }
+        const c = this.eTarget(a, es.range);
+        const r = es.size ?? 5;
+        this.emitE('phu_dong', c.x, c.z, dir.x, dir.z);
+        this.ring(c, r, 0x8ac84a, 0.7);
+        this.later(0.7, () => {
+          this.addShake(0.8);
+          this.burst(c.clone().setY(0.6), 0x8ac84a, 30, 10, 1.1);
+          for (const m of near(c, r)) {
+            this.damageMon(m, 110, c, 6, a);
+            if (!m.dead) this.applyStun(m, 1.6);
+          }
+        });
         break;
       }
-      case 'ly_thuong_kiet':
-        for (const m of near(a.pos, 9)) {
-          this.damageMon(m, 35, a.pos, 14, a);
-          if (!m.dead) {
-            this.applySlow(m, 3, 0.5);
-            this.applyFear(m, 1);
-          }
-        }
+      case 'ly_thuong_kiet': {
+        const c = this.eTarget(a, es.range);
+        const r = es.size ?? 4.5;
+        this.emitE('ly_thuong_kiet', c.x, c.z, dir.x, dir.z);
+        this.forts.push({ pos: c, r, until: this.time + 5, tick: 0, owner: a });
+        this.addShake(0.4);
         break;
+      }
     }
   }
 
@@ -2754,7 +2940,7 @@ export class Arena {
       this.link?.relay('host', {
         k: 'in',
         x: r2(a.pos.x), z: r2(a.pos.z), yaw: r2(a.yaw), mv: a.moving ? 1 : 0,
-        ax: r2(a.aim.x), az: r2(a.aim.z), hold: a.hold ? 1 : 0, dash: a.dashSeq, ult: a.ultSeq, e: a.eSeq,
+        ax: r2(a.aim.x), az: r2(a.aim.z), hold: a.hold ? 1 : 0, dash: a.dashSeq, ult: a.ultSeq, e: a.eSeq, ec: r2(a.eCharge),
       });
     }
   }
@@ -2801,6 +2987,7 @@ export class Arena {
       }
       if (n(d.e) > a.eSeq) {
         a.eSeq = n(d.e);
+        a.eCharge = Math.max(0, Math.min(1, n(d.ec)));
         this.doE(a);
       }
     } else if (this.role === 'client' && from === this.hostId) {
@@ -3053,7 +3240,7 @@ export class Arena {
         this.hud.setHazards(hazardText(this.hazards));
         break;
       }
-      case 'e': this.fxE(String(ev[1]), ev[2] as number, ev[3] as number, ev[4] as number, ev[5] as number); break;
+      case 'e': this.fxE(String(ev[1]), ev[2] as number, ev[3] as number, ev[4] as number, ev[5] as number, (ev[6] as number) || 0); break;
       case 'E': this.fxEvent(String(ev[1]), ev[2] as number, ev[3] as number, ev[4] as number); break;
       case 'M': this.startMood(String(ev[1]), ev[2] as number); break;
       case 'L': {
