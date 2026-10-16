@@ -13,6 +13,7 @@ import { loadoutOf, writeSave, type Save3D } from './save';
 import { sfx, resumeAudio, type SfxName } from './sfx';
 import { computeStats, type StatSource } from './stats';
 import { animateSwamp, buildSwamp } from './swamp';
+import { makeESkillFx } from './eskillFx';
 import { BIOMES, biomeIndexForWave } from './biomes';
 import { ARENA_R, buildArenaWorld, type ArenaWorld } from './world';
 import {
@@ -1646,6 +1647,17 @@ export class Arena {
     }
   }
 
+  /** Hiệu ứng riêng của kỹ năng E từng tướng, chạy ở máy này và phát cho đồng đội. */
+  private fxE(id: string, x: number, z: number, dx: number, dz: number): void {
+    const fx = makeESkillFx(id, this.scene, x, z, dx, dz);
+    if (fx) this.fxs.push(fx);
+  }
+
+  private emitE(id: string, x: number, z: number, dx: number, dz: number): void {
+    this.fxE(id, x, z, dx, dz);
+    this.emit(['e', id, r2(x), r2(z), r2(dx), r2(dz)]);
+  }
+
   private stake(x: number, z: number): void {
     this.fxStake(x, z);
     this.emit(['t', r2(x), r2(z)]);
@@ -2562,20 +2574,21 @@ export class Arena {
     this.popAt(a.pos, es.name, 'crit', 3.6);
     this.playSfx('boom');
     const near = (p: THREE.Vector3, r: number): Mon[] => this.mons.filter((m) => !m.dead && m.pos.distanceTo(p) < r + m.def.radius);
+    const eid = a.stats.general.id;
+    const edir = this.aimDir(a);
+    const efx = eid === 'ngo_quyen' || eid === 'nguyen_trai' ? this.swampCenter(a) : a.pos;
+    this.emitE(eid, efx.x, efx.z, edir.x, edir.z);
     switch (a.stats.general.id) {
       case 'tran_hung_dao':
         for (const pl of this.actors.values()) {
           if (!pl.alive || pl.pos.distanceTo(a.pos) > 14) continue;
           pl.dmgBuffUntil = this.time + 6;
-          this.ring(pl.pos, 2.5, 0xffd24a, 0.6);
           this.burst(pl.pos.clone().setY(1.2), 0xffd24a, 12, 5, 0.9);
         }
-        this.ring(a.pos, 14, 0xffd24a, 0.8);
         break;
       case 'quang_trung': {
         const c = a.pos.clone().addScaledVector(this.aimDir(a), 6).setY(0);
-        this.ring(c, 5.5, 0xff6a20, 0.6);
-        this.burst(c.clone().setY(1), 0xff6a20, 30, 10, 1.2);
+        this.later(0.5, () => this.burst(c.clone().setY(1), 0xff6a20, 30, 10, 1.2));
         this.addShake(0.5);
         for (const m of near(c, 5.5)) {
           this.damageMon(m, 70, c, 9, a);
@@ -2585,8 +2598,6 @@ export class Arena {
       }
       case 'le_loi':
         a.guardUntil = this.time + 4;
-        this.ring(a.pos, 3, 0xffe08a, 0.8);
-        this.burst(a.pos.clone().setY(1.2), 0xffe08a, 20, 5, 1);
         break;
       case 'hai_ba_trung':
         for (const pl of this.actors.values()) {
@@ -2594,9 +2605,7 @@ export class Arena {
           const heal = Math.round(pl.stats.maxHp * 0.3);
           pl.hp = Math.min(pl.stats.maxHp, pl.hp + heal);
           this.popAt(pl.pos, `+${heal}`, 'heal', 2.6);
-          this.ring(pl.pos, 2.4, 0xf0a0d0, 0.6);
         }
-        this.ring(a.pos, 10, 0xffe08a, 0.8);
         break;
       case 'ba_trieu':
         this.whirlwind(a);
@@ -2606,7 +2615,6 @@ export class Arena {
       case 'ngo_quyen': {
         const c = this.swampCenter(a);
         for (let i = 0; i < 6; i++) this.stake(c.x + (Math.random() - 0.5) * 7, c.z + (Math.random() - 0.5) * 7);
-        this.ring(c, 4.5, 0x7a6a3a, 0.6);
         for (const m of near(c, 4.5)) {
           this.damageMon(m, 85, c, 4, a);
           if (!m.dead) this.applyStun(m, 1.2);
@@ -2615,8 +2623,6 @@ export class Arena {
       }
       case 'nguyen_trai': {
         const c = this.swampCenter(a);
-        this.ring(c, 5.5, 0x9ad0ff, 0.7);
-        this.burst(c.clone().setY(0.6), 0x9ad0ff, 24, 8, 1);
         for (const m of near(c, 5.5)) {
           this.damageMon(m, 45, c, 3, a);
           if (!m.dead) {
@@ -2628,9 +2634,6 @@ export class Arena {
       }
       case 'phu_dong': {
         const dir = this.aimDir(a);
-        const mid = a.pos.clone().addScaledVector(dir, 4.5);
-        this.ring(mid, 4.5, 0x8ac84a, 0.5);
-        this.burst(mid.clone().setY(1), 0x8ac84a, 22, 9, 1);
         this.addShake(0.4);
         for (const m of near(a.pos, 9)) {
           const v = new THREE.Vector3().subVectors(m.pos, a.pos).setY(0);
@@ -2642,8 +2645,6 @@ export class Arena {
         break;
       }
       case 'ly_thuong_kiet':
-        this.ring(a.pos, 9, 0xf0d070, 0.7);
-        this.ring(a.pos, 5, 0xffffff, 0.5);
         for (const m of near(a.pos, 9)) {
           this.damageMon(m, 35, a.pos, 14, a);
           if (!m.dead) {
@@ -3052,6 +3053,7 @@ export class Arena {
         this.hud.setHazards(hazardText(this.hazards));
         break;
       }
+      case 'e': this.fxE(String(ev[1]), ev[2] as number, ev[3] as number, ev[4] as number, ev[5] as number); break;
       case 'E': this.fxEvent(String(ev[1]), ev[2] as number, ev[3] as number, ev[4] as number); break;
       case 'M': this.startMood(String(ev[1]), ev[2] as number); break;
       case 'L': {

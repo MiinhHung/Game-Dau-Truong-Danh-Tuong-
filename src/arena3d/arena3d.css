@@ -320,3 +320,7 @@ input:focus, select:focus { border-color: var(--line); }
 .brow span, .brow em { font-style: normal; display: block; line-height: 1.25; }
 .brow small { display: block; font-size: 10px; color: #bfae88; }
 .brow em { text-align: right; color: #ffd24a; font-weight: 700; }
+
+/* Điện thoại: nhắc xoay ngang khi đang ở chế độ dọc */
+#touch .rotate-hint { display: none; position: absolute; left: 50%; top: 12px; transform: translateX(-50%); padding: 8px 14px; border-radius: 10px; background: rgba(20,14,9,0.88); border: 1px solid #c8963e; color: #f4ead4; font-weight: 700; font-size: 13px; text-align: center; max-width: 86vw; pointer-events: none; }
+@media (orientation: portrait) and (pointer: coarse) { #touch .rotate-hint { display: block; } }

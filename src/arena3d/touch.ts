@@ -2,6 +2,8 @@
  * Điều khiển cảm ứng cho điện thoại và máy tính bảng: cần điều khiển bên trái để di chuyển, nút đánh, Q, E, lướt ở bên phải.
  * Khi dùng cảm ứng, đòn đánh tự nhắm vào quái gần nhất. Mở ?touch=1 trên URL để bật thử trên máy tính.
  */
+import { saveSettings, settings } from './settings';
+
 export const touch = {
   /** Thiết bị có cảm ứng (hoặc ép bật bằng ?touch=1). */
   enabled: false,
@@ -17,6 +19,52 @@ export const touch = {
 };
 
 let root: HTMLElement | null = null;
+
+/** Hai ngón chụm lại hoặc banh ra ở vùng trống để zoom camera xa gần (lưu vào cài đặt). */
+function setupPinch(): void {
+  let last = 0;
+  const onUi = (t: Touch): boolean => !!(t.target as HTMLElement | null)?.closest?.('.tj, .tb, button, input, .modal');
+  const dist = (e: TouchEvent): number => Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+  window.addEventListener(
+    'touchstart',
+    (e) => {
+      last = e.touches.length === 2 && !onUi(e.touches[0]) && !onUi(e.touches[1]) ? dist(e) : 0;
+    },
+    { passive: true },
+  );
+  window.addEventListener(
+    'touchmove',
+    (e) => {
+      if (e.touches.length !== 2 || !last || !root || root.classList.contains('hidden')) return;
+      e.preventDefault();
+      const d = dist(e);
+      if (d < 1) return;
+      settings.zoom = Math.max(9, Math.min(36, settings.zoom * (last / d)));
+      last = d;
+      touch.lastUse = performance.now();
+    },
+    { passive: false },
+  );
+  window.addEventListener('touchend', () => {
+    last = 0;
+    saveSettings();
+  });
+}
+
+/** Khi vào trận trên điện thoại: thử toàn màn hình và khóa xoay ngang (không phải trình duyệt nào cũng cho). */
+function goLandscape(): void {
+  try {
+    const el = document.documentElement;
+    const lock = (): void => {
+      const o = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> };
+      o.lock?.('landscape').catch(() => undefined);
+    };
+    if (!document.fullscreenElement && el.requestFullscreen) el.requestFullscreen().then(lock, lock);
+    else lock();
+  } catch {
+    /* trình duyệt không hỗ trợ: đã có lời nhắc xoay ngang */
+  }
+}
 
 function detect(): boolean {
   try {
@@ -61,7 +109,8 @@ function build(): HTMLElement {
     <button class="tb" id="tb-q">Q</button>
     <button class="tb" id="tb-e">E</button>
     <button class="tb" id="tb-dash">Lướt</button>
-    <button class="tb pause" id="tb-pause">II</button>`;
+    <button class="tb pause" id="tb-pause">II</button>
+    <div class="rotate-hint">Xoay ngang điện thoại để chơi · Chụm hai ngón để zoom</div>`;
   document.getElementById('ui')!.appendChild(el);
 
   const base = el.querySelector<HTMLElement>('#tj')!;
@@ -123,8 +172,12 @@ function build(): HTMLElement {
 export function showTouch(on: boolean): void {
   if (!touch.enabled && on) touch.enabled = detect();
   if (!touch.enabled) return;
-  if (!root) root = build();
+  if (!root) {
+    root = build();
+    setupPinch();
+  }
   root.classList.toggle('hidden', !on);
+  if (on) goLandscape();
   if (!on) {
     touch.moveX = touch.moveY = 0;
     touch.attack = touch.q = touch.e = touch.dash = false;
