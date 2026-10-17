@@ -17,6 +17,8 @@ import { AimIndicator, makeESkillFx } from '../rendering/fx/eskill-fx';
 import { BIOMES, biomeIndexForWave } from '../rendering/biomes/biomes';
 import { ARENA_R, buildArenaWorld, type ArenaWorld } from '../rendering/world/arena-world';
 import { MinimapRenderer } from './systems/minimap-renderer';
+import { ArenaCamera } from './camera/arena-camera';
+import { DropSystem } from './systems/drop-system';
 import {
   VIS,
   type Actor,
@@ -80,7 +82,18 @@ const AFFIX_COLORS = [0, 0x40e0ff, 0xff8a20, 0x60ff80, 0xc8c8e0];
 
 export class Arena {
   scene = new THREE.Scene();
-  camera: THREE.PerspectiveCamera;
+  private cam = new ArenaCamera();
+
+  get camera(): THREE.PerspectiveCamera {
+    return this.cam.camera;
+  }
+  get shake(): number {
+    return this.cam.shake;
+  }
+  set shake(v: number) {
+    this.cam.shake = v;
+  }
+
   private world: ArenaWorld;
   private save!: Save3D;
 
@@ -123,7 +136,13 @@ export class Arena {
   private summons: Summon[] = [];
   private summonViews = new Map<number, SummonView>();
   private armies: { start: THREE.Vector3; dir: THREE.Vector3; travelled: number; len: number; width: number; speed: number; owner: Actor; hit: Set<Mon> }[] = [];
-  private coins: Coin[] = [];
+  private dropSystem = new DropSystem(this.scene);
+  get coins(): Coin[] {
+    return this.dropSystem.coins;
+  }
+  set coins(list: Coin[]) {
+    this.dropSystem.coins = list;
+  }
   private fxs: Fx[] = [];
   private timers: { at: number; fn: () => void }[] = [];
   private wave = 0;
@@ -132,7 +151,6 @@ export class Arena {
   private queue: MonsterType[] = [];
   private spawnTimer = 0;
   private kills = 0;
-  private shake = 0;
   private dirty = 0;
 
   // hiển thị ở máy khách
@@ -175,7 +193,6 @@ export class Arena {
     private onPause: () => void,
   ) {
     this.world = buildArenaWorld(this.scene);
-    this.camera = new THREE.PerspectiveCamera(48, 1, 0.1, 500);
   }
 
   get online(): boolean {
@@ -277,8 +294,7 @@ export class Arena {
   }
 
   resize(w: number, h: number): void {
-    this.camera.aspect = w / Math.max(1, h);
-    this.camera.updateProjectionMatrix();
+    this.cam.resize(w, h);
   }
 
   private flushSave(): void {
@@ -1366,19 +1382,11 @@ export class Arena {
   }
 
   private spawnCoin(at: THREE.Vector3, value: number): void {
-    const mesh = this.coinTemplate.clone();
-    mesh.position.set(at.x, 0.9, at.z);
-    const a = Math.random() * Math.PI * 2;
-    const s = 2 + Math.random() * 3.5;
-    this.scene.add(mesh);
-    this.coins.push({ id: this.nextId++, mesh, vel: new THREE.Vector3(Math.cos(a) * s, 5 + Math.random() * 3, Math.sin(a) * s), value, age: 0 });
+    this.dropSystem.spawnCoin(at, value);
   }
 
   private spawnHeal(at: THREE.Vector3): void {
-    const mesh = buildBanhChung();
-    mesh.position.set(at.x, 0.9, at.z);
-    this.scene.add(mesh);
-    this.coins.push({ id: this.nextId++, mesh, vel: new THREE.Vector3((Math.random() - 0.5) * 3, 6, (Math.random() - 0.5) * 3), value: 0.3, age: 0, heal: true });
+    this.dropSystem.spawnHeal(at);
   }
 
   private animFor(kind: string): { kind: string; dur: number; spin: boolean } {
@@ -1619,7 +1627,7 @@ export class Arena {
   }
 
   private addShake(v: number): void {
-    this.shake = Math.max(this.shake, v);
+    this.cam.addShake(v);
     this.emit(['s', r2(v)]);
   }
 
@@ -3571,38 +3579,15 @@ export class Arena {
   }
 
   private updateCoins(dt: number): void {
-    for (const c of this.coins) {
-      c.age += dt;
-      const p = c.mesh.position;
-      const near = this.nearestActor(p);
-      const toP = near ? new THREE.Vector3(near.pos.x - p.x, 0.9 - p.y, near.pos.z - p.z) : new THREE.Vector3();
-      const d = toP.length();
-      const magnet = !!near && c.age > 0.45 && d < (c.heal ? 3.5 : 6);
-      if (magnet && near) {
-        p.addScaledVector(toP.normalize(), (10 + c.age * 6) * dt);
-        if (d < 1.1) {
-          c.age = -1;
-          if (c.heal) {
-            const heal = Math.round(near.stats.maxHp * c.value);
-            near.hp = Math.min(near.stats.maxHp, near.hp + heal);
-            this.popAt(near.pos, `+${heal}`, 'heal', 2.4);
-          } else this.creditGold(near, c.value);
-        }
-      } else {
-        c.vel.y -= 22 * dt;
-        p.addScaledVector(c.vel, dt);
-        if (p.y < 0.35) {
-          p.y = 0.35;
-          c.vel.y = Math.abs(c.vel.y) * 0.35;
-          c.vel.x *= 0.7;
-          c.vel.z *= 0.7;
-        }
-      }
-      if (c.heal) c.mesh.rotation.y += dt * 2;
-      else c.mesh.rotation.z += dt * 5;
-    }
-    for (const c of this.coins) if (c.age < 0) this.scene.remove(c.mesh);
-    this.coins = this.coins.filter((c) => c.age >= 0);
+    this.dropSystem.update(dt, {
+      nearestActor: (p) => this.nearestActor(p),
+      creditGold: (near, val) => this.creditGold(near, val),
+      onHeal: (near, val) => {
+        const heal = Math.round(near.stats.maxHp * val);
+        near.hp = Math.min(near.stats.maxHp, near.hp + heal);
+        this.popAt(near.pos, `+${heal}`, 'heal', 2.4);
+      },
+    });
   }
 
   private updateFx(dt: number): void {
@@ -3650,17 +3635,8 @@ export class Arena {
   private updateCamera(dt: number): void {
     let focus = this.me;
     if (!focus.alive) focus = this.aliveActors()[0] ?? this.me;
-    const target = new THREE.Vector3(focus.pos.x, 0, focus.pos.z);
-    this.camTarget.copy(target);
-    const pitch = 1.1;
-    const desired = new THREE.Vector3(target.x, Math.sin(pitch) * settings.zoom, target.z + Math.cos(pitch) * settings.zoom);
-    this.camera.position.lerp(desired, Math.min(1, dt * 6));
-    this.shake = Math.max(0, this.shake - dt * 2.4);
-    const s = this.shake * 0.35;
-    this.camera.lookAt(new THREE.Vector3(target.x + (Math.random() - 0.5) * s, 1, target.z + (Math.random() - 0.5) * s));
-    this.world.sun.position.set(target.x + 26, 40, target.z + 16);
-    this.world.sun.target.position.copy(target);
-    this.world.sun.target.updateMatrixWorld();
+    this.cam.update(dt, focus.pos, settings.zoom, this.world.sun);
+    this.camTarget.copy(this.cam.target);
   }
 
   /* ---------- Sự kiện bản đồ ---------- */
