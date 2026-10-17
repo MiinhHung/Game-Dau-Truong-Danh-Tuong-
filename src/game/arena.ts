@@ -8,6 +8,7 @@ import { ambience } from '../infrastructure/audio/ambience-engine';
 import { HAZARDS, HAZARD_FROM, hazardById, hazardText } from '../rendering/fx/hazards';
 import { applyAvatar } from '../rendering/loaders/glb-avatar';
 import { box, buildBanhChung, buildBow, buildCoin, buildElephant, buildHuman, buildMonster, buildProjectile, buildWeaponModel, cone, cyl, flashMaterials, sph, tintEvolved, type Rig } from '../rendering/models/models';
+import { attachGearToRig } from '../rendering/items/gear-models';
 import type { PlayerInfo } from '../infrastructure/network/net-client';
 import { loadoutOf, writeSave, type Save3D } from '../infrastructure/persistence/save-repository';
 import { sfx, resumeAudio, type SfxName } from '../infrastructure/audio/sfx-engine';
@@ -243,6 +244,7 @@ export class Arena {
     this.attach();
     this.hud.setGold(0, save.gold);
     this.hud.setKills(0);
+    this.hud.setGeneral?.(this.me.stats.general.id);
     this.hud.setLoadout(this.me.stats.weapon.name + (this.evo(this.me) ? ' ★' : ''), this.me.stats.general.ult, ESKILLS[this.me.stats.general.id]?.name ?? '');
     this.refreshChips();
     this.hud.setTeam([]);
@@ -280,6 +282,7 @@ export class Arena {
     this.cancelEAim();
     if (p) this.keys.clear();
     this.mouseDown = false;
+    this.hud.setPaused?.(p);
   }
 
   /** Gọi sau khi mua hoặc đổi trang bị trong lúc tạm dừng (chỉ chơi một mình). */
@@ -289,6 +292,8 @@ export class Arena {
     a.stats = computeStats(this.save);
     a.hp = Math.max(1, Math.min(a.stats.maxHp, ratio * a.stats.maxHp));
     this.attachWeapon(a);
+    attachGearToRig(a.rig, this.save.equipped);
+    this.hud.setGeneral?.(a.stats.general.id);
     this.hud.setLoadout(a.stats.weapon.name + (this.evo(a) ? ' ★' : ''), a.stats.general.ult, ESKILLS[a.stats.general.id]?.name ?? '');
     this.hud.setHp(a.hp, a.stats.maxHp);
   }
@@ -340,6 +345,12 @@ export class Arena {
 
   private onKeyDown = (e: KeyboardEvent): void => {
     if (typing()) return;
+    if (e.code === 'Escape') {
+      if (e.repeat) return;
+      if (!this.over) this.onPause();
+      return;
+    }
+    if (this.paused) return;
     if (e.code === 'KeyM' && !e.repeat && this.active) {
       this.hud.banner(ambience.toggleMute() ? 'Đã tắt âm nền' : 'Đã bật âm nền', 'Nhấn M để đổi');
       return;
@@ -353,11 +364,6 @@ export class Arena {
       return;
     }
     if (e.code === 'Space') e.preventDefault();
-    if (e.code === 'Escape') {
-      if (e.repeat) return;
-      if (!this.over) this.onPause();
-      return;
-    }
     this.keys.add(e.code);
   };
   private onKeyUp = (e: KeyboardEvent): void => {
@@ -472,6 +478,7 @@ export class Arena {
       fxRage: false,
     };
     this.attachWeapon(a);
+    attachGearToRig(a.rig, src.equipped);
     root.position.copy(a.pos);
     return a;
   }
@@ -3957,6 +3964,7 @@ export class Arena {
   }
 
   private pickCard(i: number): void {
+    if (this.paused) return;
     if (!this.offerOpen || i < 0 || i >= this.offerIds.length) return;
     this.offerOpen = false;
     this.hud.showCards(null, () => {});

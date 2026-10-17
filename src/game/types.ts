@@ -30,6 +30,8 @@ export interface Hud {
   /** Tên hiển thị trên đầu đồng đội. Truyền text = null để ẩn. */
   tag(id: string, text: string | null, x: number, y: number): void;
   clearTags(): void;
+  setGeneral?(generalId: string): void;
+  setPaused?(p: boolean): void;
 }
 
 export interface RunResult {

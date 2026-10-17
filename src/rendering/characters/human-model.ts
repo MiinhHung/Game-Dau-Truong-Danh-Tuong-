@@ -16,6 +16,14 @@ export interface Rig {
   cape?: THREE.Mesh;
   /** Model .glb thay cho hình khối (xem glbAvatar.ts). */
   avatar?: THREE.Group;
+  /** Các mô hình trang bị 3D gắn trên Rig (Mũ, Giáp, Giày, Bùa). */
+  gearNodes?: {
+    head?: THREE.Group;
+    body?: THREE.Group;
+    feetL?: THREE.Group;
+    feetR?: THREE.Group;
+    charm?: THREE.Group;
+  };
 }
 
 export interface HumanOpts {

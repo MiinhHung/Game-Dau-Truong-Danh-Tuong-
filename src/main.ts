@@ -7,6 +7,7 @@ import { NetClient, type PlayerInfo } from './infrastructure/network/net-client'
 import { OnlineUI, type StartInfo } from './ui/screens/online-modal';
 import { loadSave, loadoutOf, writeSave } from './infrastructure/persistence/save-repository';
 import { createHud, hideModal, LobbyUI, showGameOver, showOnlineMenu, showPause } from './ui/screens/hud';
+import { showLoadingScreen } from './ui/screens/loading-screen';
 import { logger } from './shared/logger';
 
 const canvas = document.getElementById('c') as HTMLCanvasElement;
@@ -44,6 +45,7 @@ const arena = new Arena(
 function syncPreview(): void {
   lobby.setGeneral(save.general);
   lobby.setWeapon(save.weapon);
+  lobby.setEquipped(save.equipped);
 }
 
 const online = new OnlineUI({
@@ -88,31 +90,37 @@ const lobbyUi = new LobbyUI({
 /* ---------- Chơi một mình ---------- */
 
 function startRun(): void {
-  mode = 'arena';
-  paused = false;
-  onlineRun = false;
   lobbyUi.hide();
   online.hide();
   hideModal();
-  hud.show(GENERALS.find((g) => g.id === save.general)?.name ?? '');
-  arena.start(save);
+  showLoadingScreen(() => {
+    mode = 'arena';
+    paused = false;
+    onlineRun = false;
+    hud.show(GENERALS.find((g) => g.id === save.general)?.name ?? '');
+    hud.setGeneral?.(save.general);
+    arena.start(save);
+  }, { mode: 'arena', durationMs: 1200 });
 }
 
 /* ---------- Chơi cùng bạn bè ---------- */
 
 function startOnlineRun(info: StartInfo): void {
-  mode = 'arena';
-  paused = false;
-  onlineRun = true;
-  const myId = net.id;
-  isHost = info.hostId === myId;
   lobbyUi.hide();
   online.hide();
   hideModal();
-  hud.show(net.name);
-  online.enterGame();
-  const players: PlayerInfo[] = info.players.map((p) => ({ id: p.id, name: p.name, loadout: p.id === myId ? loadoutOf(save) : p.loadout }));
-  arena.start(save, { role: isHost ? 'host' : 'client', myId, hostId: info.hostId, players, link: { relay: (to, d) => net.relay(to, d) } });
+  showLoadingScreen(() => {
+    mode = 'arena';
+    paused = false;
+    onlineRun = true;
+    const myId = net.id;
+    isHost = info.hostId === myId;
+    hud.show(net.name);
+    hud.setGeneral?.(save.general);
+    online.enterGame();
+    const players: PlayerInfo[] = info.players.map((p) => ({ id: p.id, name: p.name, loadout: p.id === myId ? loadoutOf(save) : p.loadout }));
+    arena.start(save, { role: isHost ? 'host' : 'client', myId, hostId: info.hostId, players, link: { relay: (to, d) => net.relay(to, d) } });
+  }, { mode: 'arena', durationMs: 1200 });
 }
 
 net.on('relay', (m) => {
@@ -195,6 +203,11 @@ function resize(): void {
 window.addEventListener('resize', resize);
 resize();
 syncPreview();
+
+// Màn hình loading khởi tạo đồ họa và tài nguyên trước khi mở sảnh chờ
+showLoadingScreen(() => {
+  lobbyUi.show();
+}, { mode: 'lobby', durationMs: 1400 });
 
 const clock = new THREE.Clock();
 function loop(): void {

@@ -1,11 +1,15 @@
 import { settings, saveSettings } from '../../infrastructure/persistence/settings-repository';
 import { ambience } from '../../infrastructure/audio/ambience-engine';
-import { COMBOS, ESKILLS, EVOLVE, GEARS, GENERALS, MAX_WEAPON_LEVEL, SLOT_LABEL, WEAPONS, comboFor, upgradeCost, type GearSlot, type WeaponKind } from '../../domain/data';
+import { COMBOS, ESKILLS, EVOLVE, GEARS, GENERALS, MAX_WEAPON_LEVEL, SLOT_LABEL, WEAPONS, comboFor, upgradeCost, type GearSlot, type WeaponKind, type General, type Gear } from '../../domain/data';
 import type { Hud, RunResult } from '../../game/types';
 import { buyGear, buyWeapon, equipGear, selectGeneral, selectWeapon, unequipSlot, upgradeWeapon, type ShopResult } from '../../domain/progression/shop';
 import { computeStats } from '../../domain/combat/stats';
 import { ACHIEVEMENTS, ensureQuests, pendingAchievements, questGoal, questReward, questText } from '../../domain/progression/quests';
 import { writeSave, type Save3D } from '../../infrastructure/persistence/save-repository';
+import { ShopHeroStage } from './shop-hero-stage';
+import { GENERAL_LORES } from '../../rendering/world/lobby-dioramas';
+
+let activeShopHeroStage: ShopHeroStage | null = null;
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -25,11 +29,71 @@ export function fmt(n: number): string {
   return Math.round(n).toLocaleString('vi-VN');
 }
 
+export function renderGeneralSvg(g: General): string {
+  const hex = (c: number): string => '#' + c.toString(16).padStart(6, '0');
+  const skin = hex(g.look.skin);
+  const hatColor = hex(g.look.hatColor);
+  const trimColor = hex(g.look.trim);
+  const topColor = hex(g.look.top);
+  const ultColor = hex(g.ultColor);
+
+  let iconSvg = '';
+  switch (g.id) {
+    case 'quang_trung':
+      iconSvg = `<path d="M14 26 Q24 14 34 26 Q24 20 14 26" fill="${ultColor}" /><circle cx="24" cy="21" r="2.5" fill="#fff" />`;
+      break;
+    case 'tran_hung_dao':
+      iconSvg = `<path d="M16 20 L32 32 M32 20 L16 32" stroke="${trimColor}" stroke-width="2.5" stroke-linecap="round" />`;
+      break;
+    case 'le_loi':
+      iconSvg = `<path d="M24 15 L24 33 M20 19 L28 19" stroke="${trimColor}" stroke-width="2.5" stroke-linecap="round" />`;
+      break;
+    case 'hai_ba_trung':
+      iconSvg = `<path d="M24 16 C20 22 16 25 16 29 C18 33 30 33 32 29 C32 25 28 22 24 16 Z" fill="${ultColor}" opacity="0.9" />`;
+      break;
+    case 'ngo_quyen':
+      iconSvg = `<path d="M16 31 L20 20 L24 31 L28 20 L32 31" stroke="${ultColor}" stroke-width="2.2" stroke-linejoin="round" fill="none" />`;
+      break;
+    case 'ba_trieu':
+      iconSvg = `<path d="M14 25 Q24 17 34 25 Q24 33 14 25" fill="${ultColor}" />`;
+      break;
+    case 'nguyen_trai':
+      iconSvg = `<path d="M18 18 L30 30 M28 18 L20 30" stroke="#fff" stroke-width="2" />`;
+      break;
+    case 'phu_dong':
+      iconSvg = `<path d="M24 14 L24 34 M20 24 L28 24" stroke="#4ade80" stroke-width="3" stroke-linecap="round" />`;
+      break;
+    case 'ly_thuong_kiet':
+      iconSvg = `<path d="M16 31 L16 22 L20 22 L20 25 L24 25 L24 22 L28 22 L28 25 L32 25 L32 31 Z" fill="${trimColor}" />`;
+      break;
+    default:
+      iconSvg = `<circle cx="24" cy="24" r="7" fill="${trimColor}" />`;
+  }
+
+  return `<svg viewBox="0 0 48 48" width="48" height="48" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <radialGradient id="g-bg-${g.id}" cx="50%" cy="40%" r="60%">
+        <stop offset="0%" stop-color="${topColor}" />
+        <stop offset="100%" stop-color="#100a06" />
+      </radialGradient>
+    </defs>
+    <rect width="48" height="48" rx="6" fill="url(#g-bg-${g.id})" />
+    <circle cx="24" cy="24" r="15" fill="${skin}" opacity="0.25" />
+    <path d="M12 44 C12 36 18 32 24 32 C30 32 36 36 36 44 Z" fill="${topColor}" />
+    <path d="M14 22 C14 14 20 10 24 10 C28 10 34 14 34 22 C34 23 14 23 14 22 Z" fill="${hatColor}" />
+    <path d="M13 22 L35 22" stroke="${trimColor}" stroke-width="2" />
+    ${iconSvg}
+    <rect x="1" y="1" width="46" height="46" rx="5" fill="none" stroke="${trimColor}" stroke-width="1.5" opacity="0.6" />
+  </svg>`;
+}
+
 /* ---------- HUD ---------- */
 
 export interface HudApi extends Hud {
   show(name: string): void;
   hide(): void;
+  setGeneral?(generalId: string): void;
+  setPaused?(p: boolean): void;
 }
 
 export function createHud(): HudApi {
@@ -44,11 +108,53 @@ export function createHud(): HudApi {
   const team = $('hud-team');
   const tags = new Map<string, HTMLDivElement>();
   let bannerTimer = 0;
+  let currentWeapon = '';
+  let currentUlt = '';
+  let currentE = '';
+  let prevAtk = 1;
+  let prevDash = 1;
+  let prevUlt = 1;
+  let prevE = 1;
+  let isPaused = false;
+  let currentOffer: { items: { name: string; desc: string; level: string }[]; pick: (i: number) => void } | null = null;
+  let heroCastTimer = 0;
+  let castHintTimer = 0;
+
   const setCd = (id: string, r: number): void => {
     const el = $(id);
+    if (!el) return;
     el.style.setProperty('--r', String(Math.max(0, Math.min(1, r))));
     el.classList.toggle('ready', r >= 0.999);
   };
+
+  const triggerCast = (slot: 'atk' | 'dash' | 'ult' | 'e', name: string): void => {
+    const el = $(`cd-${slot}`);
+    if (el) {
+      el.classList.remove('cast-active');
+      void el.offsetWidth;
+      el.classList.add('cast-active');
+      window.setTimeout(() => el.classList.remove('cast-active'), 400);
+    }
+    const hero = $('hero-frame');
+    const hint = $('hero-cast-hint');
+    if (hero) {
+      hero.classList.remove('casting-atk', 'casting-dash', 'casting-ult', 'casting-e');
+      void hero.offsetWidth;
+      hero.classList.add(`casting-${slot}`);
+      window.clearTimeout(heroCastTimer);
+      heroCastTimer = window.setTimeout(() => {
+        hero.classList.remove('casting-atk', 'casting-dash', 'casting-ult', 'casting-e');
+      }, 500);
+    }
+    if (hint && name) {
+      const prefix = slot === 'ult' ? '★ ' : slot === 'e' ? '🔥 ' : slot === 'dash' ? '⚡ ' : '✦ ';
+      hint.textContent = `${prefix}${name}`;
+      hint.classList.add('show');
+      window.clearTimeout(castHintTimer);
+      castHintTimer = window.setTimeout(() => hint.classList.remove('show'), 800);
+    }
+  };
+
   return {
     show(name) {
       $('hud-name').textContent = name;
@@ -58,6 +164,11 @@ export function createHud(): HudApi {
       root.classList.add('hidden');
       banner.classList.add('hidden');
       bossBox.classList.add('hidden');
+      const box = $('cards');
+      if (box) {
+        box.classList.add('hidden');
+        box.classList.remove('paused-hidden');
+      }
     },
     setHp(hp, max) {
       hpFill.style.width = `${Math.max(0, (hp / max) * 100)}%`;
@@ -74,19 +185,44 @@ export function createHud(): HudApi {
       $('hud-kills').textContent = `Hạ ${n} quái`;
     },
     setCooldowns(atk, dash, ult, e) {
+      if (prevAtk >= 0.75 && atk < 0.25) triggerCast('atk', currentWeapon || 'Tấn công');
+      if (prevDash >= 0.75 && dash < 0.25) triggerCast('dash', 'Lướt');
+      if (prevUlt >= 0.75 && ult < 0.25) triggerCast('ult', currentUlt || 'Chiêu cuối');
+      if (prevE >= 0.75 && e < 0.25) triggerCast('e', currentE || 'Kỹ năng E');
+
+      prevAtk = atk;
+      prevDash = dash;
+      prevUlt = ult;
+      prevE = e;
+
       setCd('cd-atk', atk);
       setCd('cd-dash', dash);
       setCd('cd-ult', ult);
       setCd('cd-e', e);
     },
     setLoadout(weapon, ult, e) {
+      currentWeapon = weapon;
+      currentUlt = ult;
+      currentE = e;
       $('cd-atk-name').textContent = weapon;
       $('cd-ult-name').textContent = ult;
       $('cd-e-name').textContent = e;
     },
+    setGeneral(generalId) {
+      const g = GENERALS.find((x) => x.id === generalId);
+      if (!g) return;
+      const heroName = $('hero-name');
+      const heroTitle = $('hero-title');
+      const heroAvatar = $('hero-avatar');
+      if (heroName) heroName.textContent = g.name;
+      if (heroTitle) heroTitle.textContent = g.title;
+      if (heroAvatar) heroAvatar.innerHTML = renderGeneralSvg(g);
+    },
     setXp(level, ratio) {
       $('xp-fill').style.width = `${Math.max(0, Math.min(1, ratio)) * 100}%`;
       $('xp-text').textContent = `Cấp ${level}`;
+      const badge = $('hero-lvl-badge');
+      if (badge) badge.textContent = `Cấp ${level}`;
     },
     setHazards(text) {
       const el = $('hud-hazard');
@@ -97,19 +233,56 @@ export function createHud(): HudApi {
       const el = $('hud-cards');
       el.textContent = text;
       el.classList.toggle('hidden', !text);
+
+      const deck = $('hero-deck');
+      if (!deck) return;
+      if (!text || !text.trim()) {
+        deck.innerHTML = '<span class="deck-empty">Chưa có nâng cấp</span>';
+        return;
+      }
+      const parts = text.split(' • ').map((s) => s.trim()).filter(Boolean);
+      deck.innerHTML = parts
+        .map((p) => {
+          const isCombo = p.startsWith('Combo:');
+          const isEvo = p.includes('tiến hóa');
+          const icon = isCombo ? '⚡ ' : isEvo ? '✨ ' : '🔰 ';
+          const cls = isCombo ? 'combo' : isEvo ? 'evo' : 'card';
+          return `<span class="deck-chip ${cls}">${icon}<b>${escapeHtml(p)}</b></span>`;
+        })
+        .join('');
     },
     showCards(items, pick) {
       const box = $('cards');
       if (!items) {
+        currentOffer = null;
         box.classList.add('hidden');
+        box.classList.remove('paused-hidden');
         box.innerHTML = '';
         return;
       }
+      currentOffer = { items, pick };
       box.innerHTML = `<div class="cards-title">Lên cấp! Chọn một thẻ nâng cấp <small>(phím 1, 2, 3 hoặc bấm chuột)</small></div><div class="cards-row">${items
         .map((c, i) => `<button class="upcard" data-i="${i}"><kbd>${i + 1}</kbd><b>${escapeHtml(c.name)}</b><span>${escapeHtml(c.desc)}</span><small>${escapeHtml(c.level)}</small></button>`)
         .join('')}</div>`;
       box.classList.remove('hidden');
-      box.querySelectorAll<HTMLButtonElement>('.upcard').forEach((b) => b.addEventListener('click', () => pick(Number(b.dataset.i))));
+      if (isPaused) {
+        box.classList.add('paused-hidden');
+      } else {
+        box.classList.remove('paused-hidden');
+      }
+      box.querySelectorAll<HTMLButtonElement>('.upcard').forEach((b) =>
+        b.addEventListener('click', () => {
+          if (!isPaused) pick(Number(b.dataset.i));
+        }),
+      );
+    },
+    setPaused(p) {
+      isPaused = p;
+      const box = $('cards');
+      if (box && currentOffer) {
+        if (p) box.classList.add('paused-hidden');
+        else box.classList.remove('paused-hidden');
+      }
     },
     setBoss(name, ratio) {
       if (!name) {
@@ -249,42 +422,214 @@ export function renderWeapons(el: HTMLElement, h: PanelHooks): void {
   });
 }
 
+export let activeShopTab: 'all' | GearSlot = 'all';
+
+function renderGearIcon(g: Gear): string {
+  switch (g.id) {
+    case 'non_la':
+      return `<svg viewBox="0 0 40 40" width="34" height="34"><polygon points="20,6 4,32 36,32" fill="#d4a359" stroke="#8b5a1a" stroke-width="2"/><line x1="20" y1="6" x2="12" y2="32" stroke="#8b5a1a" stroke-width="1.2"/><line x1="20" y1="6" x2="28" y2="32" stroke="#8b5a1a" stroke-width="1.2"/><ellipse cx="20" cy="32" rx="16" ry="3" fill="#8b5a1a" opacity="0.3"/></svg>`;
+    case 'mu_dong':
+      return `<svg viewBox="0 0 40 40" width="34" height="34"><path d="M10,24 C10,12 30,12 30,24 L32,32 L8,32 Z" fill="#b87333" stroke="#f0d98a" stroke-width="1.5"/><circle cx="20" cy="18" r="4" fill="#ffd24a"/><path d="M12,24 L28,24" stroke="#5a3818" stroke-width="2"/></svg>`;
+    case 'mu_rong':
+      return `<svg viewBox="0 0 40 40" width="34" height="34"><path d="M8,14 L12,8 L16,14 L20,6 L24,14 L28,8 L32,14 L30,30 L10,30 Z" fill="#e6b422" stroke="#fffae0" stroke-width="1.5"/><circle cx="20" cy="22" r="5" fill="#e0483a" stroke="#fff" stroke-width="1"/></svg>`;
+    case 'ao_tu_than':
+      return `<svg viewBox="0 0 40 40" width="34" height="34"><path d="M14,8 L26,8 L32,16 L28,34 L12,34 L8,16 Z" fill="#8b4513" stroke="#d4a359" stroke-width="1.5"/><path d="M16,8 L20,24 L24,8" fill="#e8dcc0"/><path d="M12,24 L28,24" stroke="#c23b30" stroke-width="2.5"/></svg>`;
+    case 'giap_tre':
+      return `<svg viewBox="0 0 40 40" width="34" height="34"><rect x="10" y="8" width="20" height="24" rx="3" fill="#556b2f" stroke="#8fbc8f" stroke-width="1.5"/><line x1="10" y1="14" x2="30" y2="14" stroke="#8fbc8f" stroke-width="1.5"/><line x1="10" y1="20" x2="30" y2="20" stroke="#8fbc8f" stroke-width="1.5"/><line x1="10" y1="26" x2="30" y2="26" stroke="#8fbc8f" stroke-width="1.5"/><line x1="20" y1="8" x2="20" y2="32" stroke="#2e4210" stroke-width="1.5"/></svg>`;
+    case 'giap_long':
+      return `<svg viewBox="0 0 40 40" width="34" height="34"><path d="M12,8 L28,8 L33,18 L26,34 L14,34 L7,18 Z" fill="#b22222" stroke="#ffd700" stroke-width="1.8"/><circle cx="20" cy="20" r="6" fill="#ffd700"/><circle cx="20" cy="20" r="3" fill="#b22222"/></svg>`;
+    case 'dep_cao_su':
+      return `<svg viewBox="0 0 40 40" width="34" height="34"><path d="M12,12 C12,10 20,8 24,12 C28,16 28,28 24,32 C20,34 14,32 12,26 Z" fill="#2b2b2b" stroke="#777" stroke-width="1.5"/><path d="M14,16 Q20,18 24,16" stroke="#c23b30" stroke-width="2.5" fill="none"/><line x1="19" y1="17" x2="19" y2="21" stroke="#c23b30" stroke-width="2.5"/></svg>`;
+    case 'giay_gio':
+      return `<svg viewBox="0 0 40 40" width="34" height="34"><path d="M10,24 C10,18 16,14 24,16 L28,20 L32,28 L14,28 Z" fill="#4682b4" stroke="#87ceeb" stroke-width="1.5"/><path d="M6,20 Q12,20 16,16" stroke="#87ceeb" stroke-width="2" fill="none"/><path d="M4,24 Q10,24 14,21" stroke="#87ceeb" stroke-width="2" fill="none"/></svg>`;
+    case 'hai_than_toc':
+      return `<svg viewBox="0 0 40 40" width="34" height="34"><path d="M10,22 C10,16 18,12 26,14 L30,22 L34,26 L12,26 Z" fill="#ffd700" stroke="#fff" stroke-width="1.5"/><polygon points="28,10 32,16 26,16" fill="#ff4500"/><polygon points="32,8 36,14 30,14" fill="#ffd700"/></svg>`;
+    case 'bua_may_man':
+      return `<svg viewBox="0 0 40 40" width="34" height="34"><rect x="12" y="6" width="16" height="28" rx="2" fill="#c23b30" stroke="#ffd700" stroke-width="1.5"/><circle cx="20" cy="14" r="4" fill="#ffd700"/><path d="M17,22 L23,22 M20,19 L20,28" stroke="#ffd700" stroke-width="2"/></svg>`;
+    case 'trong_dong_mini':
+      return `<svg viewBox="0 0 40 40" width="34" height="34"><circle cx="20" cy="20" r="14" fill="#b87333" stroke="#ffd700" stroke-width="1.8"/><circle cx="20" cy="20" r="8" fill="none" stroke="#ffd700" stroke-width="1.2"/><polygon points="20,13 22,18 27,20 22,22 20,27 18,22 13,20 18,18" fill="#ffd700"/></svg>`;
+    case 'ngoc_rong':
+      return `<svg viewBox="0 0 40 40" width="34" height="34"><circle cx="20" cy="20" r="14" fill="#d97706" stroke="#fff" stroke-width="1.5"/><polygon points="20,10 23,17 30,17 24,21 26,28 20,24 14,28 16,21 10,17 17,17" fill="#dc2626"/></svg>`;
+    default:
+      return `<svg viewBox="0 0 40 40" width="34" height="34"><circle cx="20" cy="20" r="14" fill="#555" stroke="#888" stroke-width="1.5"/></svg>`;
+  }
+}
+
+function renderSlotSilhouette(slot: GearSlot): string {
+  switch (slot) {
+    case 'head':
+      return `<svg viewBox="0 0 32 32" width="24" height="24"><polygon points="16,6 5,26 27,26" fill="none" stroke="#c8963e" stroke-width="2"/><line x1="16" y1="6" x2="16" y2="26" stroke="#c8963e" stroke-width="1.2" stroke-dasharray="2 2"/></svg>`;
+    case 'body':
+      return `<svg viewBox="0 0 32 32" width="24" height="24"><path d="M10,6 L22,6 L27,14 L23,26 L9,26 L5,14 Z" fill="none" stroke="#c8963e" stroke-width="2"/><path d="M16,6 L16,26" stroke="#c8963e" stroke-width="1.2" stroke-dasharray="2 2"/></svg>`;
+    case 'feet':
+      return `<svg viewBox="0 0 32 32" width="24" height="24"><path d="M8,18 C8,12 14,10 20,12 L24,18 L26,22 L10,22 Z" fill="none" stroke="#c8963e" stroke-width="2"/></svg>`;
+    case 'charm':
+      return `<svg viewBox="0 0 32 32" width="24" height="24"><circle cx="16" cy="16" r="10" fill="none" stroke="#c8963e" stroke-width="2"/><circle cx="16" cy="16" r="4" fill="none" stroke="#c8963e" stroke-width="1.5"/></svg>`;
+  }
+}
+
 export function renderShop(el: HTMLElement, h: PanelHooks): void {
   const s = h.save;
+  const currentGeneral = GENERALS.find((g) => g.id === s.general) ?? GENERALS[0];
   const slots: GearSlot[] = ['head', 'body', 'feet', 'charm'];
-  el.innerHTML = slots
-    .map((slot) => {
-      const items = GEARS.filter((g) => g.slot === slot);
-      return `<h3 class="slot-title">${SLOT_LABEL[slot]}</h3>${items
-        .map((g) => {
-          const owned = s.ownedGear.includes(g.id);
-          const eq = s.equipped[slot] === g.id;
-          return `<article class="card ${eq ? 'sel' : ''} ${owned ? '' : 'locked'}" data-gear="${g.id}">
-            <div class="card-head"><b>${g.name}</b><small>${g.desc}</small></div>
-            <div class="card-foot">
-              ${
-                owned
-                  ? eq
-                    ? '<span class="tag">Đang mang</span><button class="btn" data-act="unequip">Tháo</button>'
-                    : '<button class="btn" data-act="equip">Mang</button>'
-                  : `<button class="btn gold" data-act="buy" ${s.gold < g.price ? 'disabled' : ''}>Mua ${fmt(g.price)} vàng</button>`
-              }
+
+  const headGear = s.equipped.head ? GEARS.find((g) => g.id === s.equipped.head) : null;
+  const bodyGear = s.equipped.body ? GEARS.find((g) => g.id === s.equipped.body) : null;
+  const feetGear = s.equipped.feet ? GEARS.find((g) => g.id === s.equipped.feet) : null;
+  const charmGear = s.equipped.charm ? GEARS.find((g) => g.id === s.equipped.charm) : null;
+
+  const bonusHp = headGear?.hp ?? 0;
+  const bonusReduce = Math.round((bodyGear?.reduce ?? 0) * 100);
+  const bonusSpeed = Math.round((feetGear?.speed ?? 0) * 100);
+  const bonusDmg = Math.round((charmGear?.dmg ?? 0) * 100);
+  const bonusCrit = Math.round((charmGear?.crit ?? 0) * 100);
+  const bonusGold = Math.round((charmGear?.gold ?? 0) * 100);
+
+  const statsPills: string[] = [];
+  if (bonusHp > 0) statsPills.push(`<span class="stat-pill hp">❤️ Máu +${bonusHp}</span>`);
+  if (bonusReduce > 0) statsPills.push(`<span class="stat-pill def">🛡️ Giảm ST +${bonusReduce}%</span>`);
+  if (bonusSpeed > 0) statsPills.push(`<span class="stat-pill spd">👟 Tốc chạy +${bonusSpeed}%</span>`);
+  if (bonusDmg > 0) statsPills.push(`<span class="stat-pill dmg">⚔️ Sát thương +${bonusDmg}%</span>`);
+  if (bonusCrit > 0) statsPills.push(`<span class="stat-pill crit">🎯 Chí mạng +${bonusCrit}%</span>`);
+  if (bonusGold > 0) statsPills.push(`<span class="stat-pill gold">💰 Vàng +${bonusGold}%</span>`);
+  if (statsPills.length === 0) statsPills.push(`<span class="stat-pill empty">Chưa kích hoạt chỉ số trang bị</span>`);
+
+  const equippedCount = slots.filter((slot) => !!s.equipped[slot]).length;
+
+  const heroColHtml = `
+    <div class="shop-hero-col">
+      <div class="shop-hero-stage-card">
+        <div class="stage-canvas-wrap">
+          <canvas class="shop-hero-canvas" id="shop-hero-canvas" width="280" height="280"></canvas>
+          <div class="stage-drag-badge">⟲ Kéo chuột để xoay 360°</div>
+        </div>
+        <div class="hero-stage-meta">
+          <div class="hero-avatar-box-mini">${renderGeneralSvg(currentGeneral)}</div>
+          <div class="hero-stage-text">
+            <div class="hero-name-row">
+              <b>${currentGeneral.name}</b>
+              <span class="hero-slot-count">${equippedCount}/4 món</span>
             </div>
-          </article>`;
-        })
-        .join('')}`;
+            <small>${currentGeneral.title}</small>
+          </div>
+        </div>
+      </div>
+      <div class="gear-summary-box">
+        <div class="summary-head">Tổng chỉ số kích hoạt từ trang bị</div>
+        <div class="summary-pills">${statsPills.join('')}</div>
+      </div>
+    </div>`;
+
+  // Right column: Equipment Shop Catalog
+  const tabCounts: Record<'all' | GearSlot, number> = {
+    all: GEARS.length,
+    head: GEARS.filter((g) => g.slot === 'head').length,
+    body: GEARS.filter((g) => g.slot === 'body').length,
+    feet: GEARS.filter((g) => g.slot === 'feet').length,
+    charm: GEARS.filter((g) => g.slot === 'charm').length,
+  };
+
+  const tabs: Array<{ id: 'all' | GearSlot; label: string }> = [
+    { id: 'all', label: 'Tất cả' },
+    { id: 'head', label: 'Mũ' },
+    { id: 'body', label: 'Giáp' },
+    { id: 'feet', label: 'Giày' },
+    { id: 'charm', label: 'Bùa' },
+  ];
+
+  const catTabsHtml = tabs
+    .map(
+      (t) =>
+        `<button class="cat-btn ${activeShopTab === t.id ? 'active' : ''}" data-cat="${t.id}">${t.label} <small>(${tabCounts[t.id]})</small></button>`,
+    )
+    .join('');
+
+  const filteredGears = activeShopTab === 'all' ? GEARS : GEARS.filter((g) => g.slot === activeShopTab);
+
+  const catalogItemsHtml = filteredGears
+    .map((g) => {
+      const owned = s.ownedGear.includes(g.id);
+      const eq = s.equipped[g.slot] === g.id;
+      return `<article class="shop-item-card ${eq ? 'is-equipped' : ''} ${owned ? 'is-owned' : ''}" data-gear="${g.id}">
+        <div class="item-card-top">
+          <div class="item-card-icon">${renderGearIcon(g)}</div>
+          <div class="item-card-meta">
+            <span class="item-slot-badge">${SLOT_LABEL[g.slot]}</span>
+            <b class="item-name">${g.name}</b>
+          </div>
+        </div>
+        <div class="item-desc">${g.desc}</div>
+        <div class="item-card-bottom">
+          ${
+            owned
+              ? eq
+                ? '<span class="gear-tag active">Đang mang</span><button class="btn btn-sm" data-act="unequip" data-slot="' + g.slot + '">Tháo</button>'
+                : '<span class="gear-tag owned">Đã có</span><button class="btn btn-sm btn-equip" data-act="equip" data-gear="' + g.id + '">Mang vào</button>'
+              : `<button class="btn gold btn-sm" data-act="buy" data-gear="${g.id}" ${s.gold < g.price ? 'disabled' : ''}>Mua ${fmt(g.price)} vàng</button>`
+          }
+        </div>
+      </article>`;
     })
     .join('');
-  el.querySelectorAll<HTMLElement>('[data-gear]').forEach((c) => {
-    const id = c.dataset.gear!;
-    const slot = GEARS.find((g) => g.id === id)!.slot;
-    c.querySelectorAll<HTMLButtonElement>('[data-act]').forEach((b) =>
-      b.addEventListener('click', () => {
-        const act = b.dataset.act;
-        const r = act === 'buy' ? buyGear(s, id) : act === 'equip' ? equipGear(s, id) : unequipSlot(s, slot);
-        h.onChange('gear', r);
-      }),
-    );
+
+  const catalogColHtml = `
+    <div class="shop-catalog-col">
+      <div class="catalog-header">
+        <div class="catalog-tabs">${catTabsHtml}</div>
+        <div class="catalog-gold"><span>🪙</span> <b>${fmt(s.gold)} vàng</b></div>
+      </div>
+      <div class="catalog-grid">${catalogItemsHtml}</div>
+    </div>`;
+
+  el.innerHTML = `<div class="shop-container">${heroColHtml}${catalogColHtml}</div>`;
+
+  const stageCanvas = el.querySelector<HTMLCanvasElement>('#shop-hero-canvas');
+  if (stageCanvas) {
+    if (activeShopHeroStage) {
+      activeShopHeroStage.destroy();
+      activeShopHeroStage = null;
+    }
+    activeShopHeroStage = new ShopHeroStage(stageCanvas);
+    activeShopHeroStage.sync(s.general, s.weapon, s.equipped);
+  }
+
+  // Bind category tabs
+  el.querySelectorAll<HTMLButtonElement>('[data-cat]').forEach((b) => {
+    b.addEventListener('click', () => {
+      activeShopTab = b.dataset.cat as typeof activeShopTab;
+      renderShop(el, h);
+    });
+  });
+
+
+  // Bind unequip actions
+  el.querySelectorAll<HTMLButtonElement>('[data-act="unequip"]').forEach((b) => {
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const slot = b.dataset.slot as GearSlot;
+      const r = unequipSlot(s, slot);
+      h.onChange('gear', r);
+    });
+  });
+
+  // Bind equip actions
+  el.querySelectorAll<HTMLButtonElement>('[data-act="equip"]').forEach((b) => {
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = b.dataset.gear!;
+      const r = equipGear(s, id);
+      h.onChange('gear', r);
+    });
+  });
+
+  // Bind buy actions
+  el.querySelectorAll<HTMLButtonElement>('[data-act="buy"]').forEach((b) => {
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = b.dataset.gear!;
+      const r = buyGear(s, id);
+      h.onChange('gear', r);
+    });
   });
 }
 
@@ -344,27 +689,116 @@ export function renderSettings(el: HTMLElement): void {
   });
 }
 
+export function renderHeroDock(el: HTMLElement, h: PanelHooks): void {
+  const currentGeneral = h.save.general;
+  const activeLore = GENERAL_LORES[currentGeneral] ?? GENERAL_LORES['ngo_quyen'];
+
+  el.innerHTML = `
+    <div class="hero-dock-bar">
+      <div class="hero-lore-banner" id="hero-lore-banner">
+        <div class="lore-header">
+          <span class="lore-icon">${activeLore.icon}</span>
+          <b class="lore-title">${activeLore.title}</b>
+          <span class="lore-year">${activeLore.year}</span>
+        </div>
+        <div class="lore-sub">${activeLore.sub}</div>
+        <div class="lore-quote">"${activeLore.quote}"</div>
+      </div>
+      <div class="hero-dock-list" id="hero-dock-list">
+        ${GENERALS.map((g) => {
+          const sel = currentGeneral === g.id;
+          return `
+            <button class="hero-dock-tile ${sel ? 'sel' : ''}" data-general="${g.id}" title="${g.name} - ${g.title}">
+              <div class="tile-avatar-box">${renderGeneralSvg(g)}</div>
+              <div class="tile-info">
+                <b class="tile-name">${g.name}</b>
+              </div>
+              ${sel ? '<span class="tile-sel-badge">Đang chọn</span>' : ''}
+            </button>`;
+        }).join('')}
+      </div>
+    </div>`;
+
+  const bannerEl = el.querySelector<HTMLElement>('#hero-lore-banner');
+  const updateBanner = (id: string): void => {
+    const lore = GENERAL_LORES[id];
+    if (!lore || !bannerEl) return;
+    bannerEl.innerHTML = `
+      <div class="lore-header">
+        <span class="lore-icon">${lore.icon}</span>
+        <b class="lore-title">${lore.title}</b>
+        <span class="lore-year">${lore.year}</span>
+      </div>
+      <div class="lore-sub">${lore.sub}</div>
+      <div class="lore-quote">"${lore.quote}"</div>
+    `;
+  };
+
+  el.querySelectorAll<HTMLButtonElement>('[data-general]').forEach((b) => {
+    const id = b.dataset.general!;
+    b.addEventListener('mouseenter', () => {
+      updateBanner(id);
+      h.onPreview?.('general', id);
+    });
+    b.addEventListener('click', () => {
+      h.onChange('general', selectGeneral(h.save, id));
+    });
+  });
+
+  const listEl = el.querySelector<HTMLElement>('#hero-dock-list');
+  listEl?.addEventListener('mouseleave', () => {
+    updateBanner(h.save.general);
+    h.onPreview?.('general', h.save.general);
+  });
+}
+
 export function renderStats(el: HTMLElement, save: Save3D): void {
   const st = computeStats(save);
   const w = st.weapon;
   const dmgBase = w.dmg;
+  const cb = comboFor(st.general.id, st.weapon.id);
+  const esk = ESKILLS[st.general.id];
+
   el.innerHTML = `
-    <h2>${st.general.name}</h2>
-    <small>${st.general.title}</small>
-    <p class="passive">${st.general.passive}</p>
-    <p class="passive ult"><b>Chiêu cuối (Q) ${st.general.ult}:</b> ${st.general.ultDesc} Hồi chiêu ${st.general.ultCd} giây.</p>
-    ${ESKILLS[st.general.id] ? `<p class="passive ult"><b>Kỹ năng phụ (E) ${ESKILLS[st.general.id].name}:</b> ${ESKILLS[st.general.id].desc} Hồi ${ESKILLS[st.general.id].cd} giây.</p>` : ''}
-    ${(() => {
-      const cb = comboFor(st.general.id, st.weapon.id);
-      return cb ? `<p class="passive combo"><b>Combo ${cb.name}:</b> ${cb.desc}</p>` : '';
-    })()}
-    ${bar('Máu', st.maxHp / 260, fmt(st.maxHp))}
-    ${bar('Sát thương', (dmgBase * st.dmgMult) / 140, fmt(dmgBase * st.dmgMult))}
-    ${bar('Tốc chạy', st.speed / 10, st.speed.toFixed(1))}
-    ${bar('Giảm sát thương', st.reduce / 0.6, `${Math.round(st.reduce * 100)}%`)}
-    ${bar('Chí mạng', st.crit / 0.5, `${Math.round(st.crit * 100)}%`)}
-    ${bar('Hệ số vàng', (st.goldMult - 1) / 0.5 + 0.06, `x${st.goldMult.toFixed(2)}`)}
-    <div class="record">Kỷ lục: màn ${save.bestWave}, đã hạ ${fmt(save.kills)} quái, ${save.runs} lượt chơi</div>`;
+    <div class="hero-info-header">
+      <div class="hero-info-avatar">${renderGeneralSvg(st.general)}</div>
+      <div class="hero-info-title">
+        <h2>${st.general.name}</h2>
+        <small>${st.general.title}</small>
+      </div>
+    </div>
+
+    <div class="hero-skills-mini">
+      <div class="skill-mini-row passive">
+        <span class="skill-mini-tag passive">Nội tại</span>
+        <div class="skill-mini-desc">${st.general.passive}</div>
+      </div>
+      <div class="skill-mini-row ult">
+        <span class="skill-mini-tag ult">Chiêu Q</span>
+        <div class="skill-mini-desc"><b>${st.general.ult}</b>: ${st.general.ultDesc}</div>
+      </div>
+      ${esk ? `
+      <div class="skill-mini-row eskill">
+        <span class="skill-mini-tag eskill">Chiêu E</span>
+        <div class="skill-mini-desc"><b>${esk.name}</b>: ${esk.desc}</div>
+      </div>` : ''}
+      ${cb ? `
+      <div class="skill-mini-row combo">
+        <span class="skill-mini-tag combo">Combo</span>
+        <div class="skill-mini-desc"><b>${cb.name}</b>: ${cb.desc}</div>
+      </div>` : ''}
+    </div>
+
+    <div class="hero-stats-mini">
+      ${bar('Máu', st.maxHp / 260, fmt(st.maxHp))}
+      ${bar('Sát thương', (dmgBase * st.dmgMult) / 140, fmt(dmgBase * st.dmgMult))}
+      ${bar('Tốc chạy', st.speed / 10, st.speed.toFixed(1))}
+      ${bar('Giảm ST', st.reduce / 0.6, `${Math.round(st.reduce * 100)}%`)}
+      ${bar('Chí mạng', st.crit / 0.5, `${Math.round(st.crit * 100)}%`)}
+      ${bar('Hệ số vàng', (st.goldMult - 1) / 0.5 + 0.06, `x${st.goldMult.toFixed(2)}`)}
+    </div>
+
+    <div class="hero-record-mini">Kỷ lục: Màn ${save.bestWave} • Hạ ${fmt(save.kills)} quái</div>`;
 }
 
 /* ---------- Sảnh chờ ---------- */
@@ -386,17 +820,38 @@ export class LobbyUI {
     root.innerHTML = `
       <header class="top">
         <div class="brand"><b>HỒN VIỆT 3D</b><small>Đấu Trường Danh Tướng</small></div>
-        <div class="top-right"><span class="gold-chip" id="lobby-gold"></span></div>
-      </header>
-      <aside class="panel left">
-        <nav class="tabs" id="lobby-tabs">
+        <nav class="tabs lobby-nav" id="lobby-tabs">
           <button data-tab="general">Tướng</button><button data-tab="weapon">Vũ khí</button><button data-tab="shop">Cửa hàng</button><button data-tab="quest">Nhiệm vụ</button><button data-tab="setting">Cài đặt</button>
         </nav>
+        <div class="top-right"><span class="gold-chip" id="lobby-gold"></span></div>
+      </header>
+      <aside class="panel left hidden" id="lobby-panel-left">
+        <div class="panel-header" id="panel-header">
+          <h3 id="panel-title">Danh sách</h3>
+          <button class="btn-close" id="panel-close-btn" title="Quay lại sảnh chọn tướng">✕</button>
+        </div>
         <div class="list" id="lobby-list"></div>
       </aside>
       <aside class="panel info" id="lobby-info"></aside>
-      <div class="play-wrap"><button class="btn big friends" id="online-btn">Chơi cùng bạn bè</button><button class="play" id="play">Vào trận</button><small>Chuột trái hoặc Space: đánh. WASD: di chuyển. Shift: lướt. Q: chiêu cuối. E: kỹ năng phụ (hiện vòng nhắm, bấm chuột trái để tung, E hoặc Esc để hủy). Cuộn chuột: zoom gần xa.</small></div>
+      <div class="lobby-hero-dock" id="lobby-hero-dock"></div>
+      <div class="play-wrap">
+        <button class="btn big friends" id="online-btn">Chơi cùng bạn bè</button>
+        <button class="play" id="play">Vào trận</button>
+        <div class="ctrl-hint-box">
+          <button class="ctrl-hint-btn" id="ctrl-hint-btn" type="button">⌨️ Phím điều khiển</button>
+          <div class="ctrl-popover hidden" id="ctrl-popover">
+            <div class="ctrl-popover-title">Thao tác chiến đấu</div>
+            <div class="ctrl-row"><kbd>WASD</kbd><span>Di chuyển</span></div>
+            <div class="ctrl-row"><kbd>Chuột trái / Space</kbd><span>Tấn công</span></div>
+            <div class="ctrl-row"><kbd>Shift</kbd><span>Lướt né đòn</span></div>
+            <div class="ctrl-row"><kbd>E</kbd><span>Kỹ năng phụ</span></div>
+            <div class="ctrl-row"><kbd>Q</kbd><span>Chiêu cuối</span></div>
+            <div class="ctrl-row"><kbd>Cuộn chuột</kbd><span>Thu phóng góc nhìn</span></div>
+          </div>
+        </div>
+      </div>
       <div class="toast hidden" id="lobby-toast"></div>`;
+
     root.querySelectorAll<HTMLButtonElement>('#lobby-tabs button').forEach((b) =>
       b.addEventListener('click', () => {
         this.tab = b.dataset.tab as typeof this.tab;
@@ -405,6 +860,26 @@ export class LobbyUI {
     );
     $('play').addEventListener('click', () => h.onPlay());
     $('online-btn').addEventListener('click', () => h.onOnline());
+
+    const ctrlBtn = $('ctrl-hint-btn');
+    const ctrlPop = $('ctrl-popover');
+    if (ctrlBtn && ctrlPop) {
+      ctrlBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        ctrlPop.classList.toggle('hidden');
+      });
+      document.addEventListener('click', () => ctrlPop.classList.add('hidden'));
+      ctrlPop.addEventListener('click', (e) => e.stopPropagation());
+    }
+
+    const closeBtn = $('panel-close-btn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        this.tab = 'general';
+        this.render();
+      });
+    }
+
     this.render();
   }
 
@@ -419,6 +894,10 @@ export class LobbyUI {
   }
 
   hide(): void {
+    if (activeShopHeroStage) {
+      activeShopHeroStage.destroy();
+      activeShopHeroStage = null;
+    }
     $('lobby').classList.add('hidden');
   }
 
@@ -436,6 +915,24 @@ export class LobbyUI {
     $('lobby-gold').textContent = `Vàng ${fmt(s.gold)}`;
     document.querySelectorAll<HTMLButtonElement>('#lobby-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === this.tab));
     const list = $('lobby-list');
+    const lobbyEl = $('lobby');
+    const panelLeft = $('lobby-panel-left');
+    const heroDock = $('lobby-hero-dock');
+    const lobbyInfo = $('lobby-info');
+    const panelTitle = $('panel-title');
+
+    if (this.tab === 'shop') {
+      lobbyEl?.classList.add('shop-mode');
+      panelLeft?.classList.add('shop-mode');
+    } else {
+      if (activeShopHeroStage) {
+        activeShopHeroStage.destroy();
+        activeShopHeroStage = null;
+      }
+      lobbyEl?.classList.remove('shop-mode');
+      panelLeft?.classList.remove('shop-mode');
+    }
+
     const hooks: PanelHooks = {
       save: s,
       onPreview: (k, id) => this.h.onPreview(k, id),
@@ -445,39 +942,82 @@ export class LobbyUI {
         this.render();
       },
     };
-    if (this.tab === 'general') renderGenerals(list, hooks);
-    else if (this.tab === 'weapon') renderWeapons(list, hooks);
-    else if (this.tab === 'quest') renderQuests(list, hooks);
-    else if (this.tab === 'setting') renderSettings(list);
-    else renderShop(list, hooks);
-    renderStats($('lobby-info'), s);
+
+    if (this.tab === 'general') {
+      panelLeft?.classList.add('hidden');
+      heroDock?.classList.remove('hidden');
+      lobbyInfo?.classList.remove('hidden');
+      if (heroDock) renderHeroDock(heroDock, hooks);
+      renderStats(lobbyInfo, s);
+    } else {
+      heroDock?.classList.add('hidden');
+      panelLeft?.classList.remove('hidden');
+      if (this.tab === 'shop') {
+        lobbyInfo?.classList.add('hidden');
+        if (panelTitle) panelTitle.textContent = 'Cửa hàng trang bị';
+        renderShop(list, hooks);
+      } else if (this.tab === 'weapon') {
+        lobbyInfo?.classList.remove('hidden');
+        if (panelTitle) panelTitle.textContent = 'Kho vũ khí';
+        renderWeapons(list, hooks);
+        renderStats(lobbyInfo, s);
+      } else if (this.tab === 'quest') {
+        lobbyInfo?.classList.remove('hidden');
+        if (panelTitle) panelTitle.textContent = 'Nhiệm vụ & Thành tích';
+        renderQuests(list, hooks);
+        renderStats(lobbyInfo, s);
+      } else if (this.tab === 'setting') {
+        lobbyInfo?.classList.add('hidden');
+        if (panelTitle) panelTitle.textContent = 'Cài đặt';
+        renderSettings(list);
+      }
+    }
   }
 }
 
 /* ---------- Hộp thoại: tạm dừng và kết thúc lượt ---------- */
 
+let modalCardsPaused = false;
+
 export function showModal(html: string): HTMLElement {
   const m = $('modal');
+  const cards = $('cards');
+  if (cards && !cards.classList.contains('hidden')) {
+    modalCardsPaused = true;
+    cards.classList.add('paused-hidden');
+  }
   m.innerHTML = `<div class="modal-card">${html}</div>`;
   m.classList.remove('hidden');
   return m.firstElementChild as HTMLElement;
 }
 
 export function hideModal(): void {
+  if (activeShopHeroStage) {
+    activeShopHeroStage.destroy();
+    activeShopHeroStage = null;
+  }
   const m = $('modal');
   m.classList.add('hidden');
   m.innerHTML = '';
+  if (modalCardsPaused) {
+    modalCardsPaused = false;
+    const cards = $('cards');
+    if (cards) cards.classList.remove('paused-hidden');
+  }
 }
 
 export function showPause(save: Save3D, cb: { onResume(): void; onExit(): void; onLoadout(): void }): void {
   let tab: 'weapon' | 'shop' | 'setting' = 'shop';
   const draw = (): void => {
+    const isShop = tab === 'shop';
     const card = showModal(`
       <h2>Tạm dừng</h2>
       <div class="gold-chip">Vàng ${fmt(save.gold)}</div>
-      <nav class="tabs"><button data-t="shop" class="${tab === 'shop' ? 'on' : ''}">Cửa hàng trang bị</button><button data-t="weapon" class="${tab === 'weapon' ? 'on' : ''}">Vũ khí</button><button data-t="setting" class="${tab === 'setting' ? 'on' : ''}">Cài đặt</button></nav>
-      <div class="list modal-list" id="modal-list"></div>
+      <nav class="tabs"><button data-t="shop" class="${isShop ? 'on' : ''}">Cửa hàng trang bị</button><button data-t="weapon" class="${tab === 'weapon' ? 'on' : ''}">Vũ khí</button><button data-t="setting" class="${tab === 'setting' ? 'on' : ''}">Cài đặt</button></nav>
+      <div class="list modal-list ${isShop ? 'shop-mode' : ''}" id="modal-list"></div>
       <div class="modal-actions"><button class="btn big" id="m-resume">Tiếp tục chiến đấu</button><button class="btn" id="m-exit">Về sảnh</button></div>`);
+    if (isShop) card.classList.add('shop-modal');
+    else card.classList.remove('shop-modal');
     const list = card.querySelector<HTMLElement>('#modal-list')!;
     const hooks: PanelHooks = {
       save,

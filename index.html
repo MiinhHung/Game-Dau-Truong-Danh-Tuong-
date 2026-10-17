@@ -10,9 +10,34 @@
   <body>
     <canvas id="c"></canvas>
     <div id="ui">
-      <section id="lobby" class="screen"></section>
+      <section id="lobby" class="screen hidden"></section>
       <section id="online" class="screen hidden"></section>
       <div id="gamechat" class="hidden"><div id="gc-log"></div><input id="gc-input" class="hidden" maxlength="200" placeholder="Gõ tin nhắn rồi nhấn Enter" autocomplete="off" /></div>
+
+      <div id="loading-screen">
+        <div class="loading-content">
+          <div class="loading-drum-wrap">
+            <svg class="loading-drum" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="50" cy="50" r="46" fill="none" stroke="#c8963e" stroke-width="2" stroke-dasharray="4 2" />
+              <circle cx="50" cy="50" r="38" fill="none" stroke="#ffd24a" stroke-width="1.5" />
+              <polygon points="50,18 53,42 77,38 58,50 72,70 50,58 28,70 42,50 23,38 47,42" fill="#c8963e" />
+              <circle cx="50" cy="50" r="10" fill="#2a1c12" stroke="#ffd24a" stroke-width="2" />
+              <circle cx="50" cy="50" r="4" fill="#ffd24a" />
+            </svg>
+            <div class="loading-glow"></div>
+          </div>
+          <div class="loading-title">HỒN VIỆT 3D</div>
+          <div class="loading-sub">ĐẤU TRƯỜNG DANH TƯỚNG</div>
+          <div class="loading-bar-wrap">
+            <div class="loading-bar"><div class="loading-bar-fill" id="loading-bar-fill"></div></div>
+            <div class="loading-bar-meta">
+              <span class="loading-text" id="loading-text">Đang nạp bối cảnh chiến trường 3D...</span>
+              <span class="loading-pct" id="loading-pct">0%</span>
+            </div>
+          </div>
+          <div class="loading-tip" id="loading-tip"></div>
+        </div>
+      </div>
 
       <section id="hud" class="hidden">
         <div class="hud-tl">
@@ -33,11 +58,31 @@
           <div class="boss-name" id="boss-name"></div>
           <div class="bar boss"><i id="boss-fill"></i></div>
         </div>
-        <div class="hud-bottom">
+        <div class="hud-left-skills" id="hud-skills">
           <div class="slot" id="cd-atk"><kbd>Chuột trái</kbd><b id="cd-atk-name"></b></div>
           <div class="slot" id="cd-dash"><kbd>Shift</kbd><b>Lướt</b></div>
           <div class="slot" id="cd-e"><kbd>E</kbd><b id="cd-e-name"></b></div>
           <div class="slot" id="cd-ult"><kbd>Q</kbd><b id="cd-ult-name"></b></div>
+        </div>
+
+        <div class="hud-bottom-dock" id="hud-bottom-dock">
+          <div class="hero-frame" id="hero-frame">
+            <div class="hero-avatar" id="hero-avatar"></div>
+            <div class="hero-meta">
+              <div class="hero-name-row">
+                <b id="hero-name">Danh Tướng</b>
+                <span class="hero-lvl-badge" id="hero-lvl-badge">Cấp 1</span>
+              </div>
+              <small id="hero-title">Đại Vương</small>
+              <div class="hero-cast-hint" id="hero-cast-hint"></div>
+            </div>
+          </div>
+          <div class="hero-deck-wrap">
+            <div class="deck-label">Bộ nâng cấp</div>
+            <div class="hero-deck" id="hero-deck">
+              <span class="deck-empty">Chưa có nâng cấp</span>
+            </div>
+          </div>
         </div>
       </section>
 
