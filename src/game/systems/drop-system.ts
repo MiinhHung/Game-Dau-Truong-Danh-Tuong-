@@ -99,3 +99,4 @@ export class DropSystem {
     this.coins = this.coins.filter((c) => c.age >= 0);
   }
 }
+
