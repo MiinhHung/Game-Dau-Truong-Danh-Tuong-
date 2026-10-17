@@ -5,6 +5,7 @@
  * (vào bằng ID, ghép trận nhanh, sẵn sàng, bắt đầu), và chuyển tiếp dữ liệu trận đấu giữa
  * các thành viên trong phòng. Toàn bộ mô phỏng trận do người tạo phòng (chủ phòng) chạy.
  */
+import { randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +22,7 @@ const clean = (s, max) => String(s ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ')
 const CODE_RE = /^HV-[A-Z0-9]{4,6}$/;
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const randomCode = () => 'HV-' + Array.from({ length: 4 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
+const randomSecret = () => randomBytes(16).toString('hex');
 const roomIdOf = (s) => clean(s, 12).toUpperCase().replace(/[^A-Z0-9_-]/g, '');
 
 function validLoadout(l) {
@@ -45,6 +47,8 @@ function validLoadout(l) {
 export function attachGameServer(httpServer, { path = WS_PATH, log = () => {}, boardFile = DEFAULT_BOARD_FILE } = {}) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024 });
   const clients = new Map();
+  const codes = new Map();
+  const identities = new Map();
   const rooms = new Map();
   const history = [];
   let nextId = 1;
@@ -190,20 +194,57 @@ export function attachGameServer(httpServer, { path = WS_PATH, log = () => {}, b
     } else if (++c.count > 30) return;
     switch (msg.t) {
       case 'hello': {
+        // Chỉ cho phép bắt tay một lần trên một kết nối để tránh đổi ID tùy ý
+        if (c.welcomed) return;
+        c.welcomed = true;
         c.name = clean(msg.name, 16) || `Khách${c.id}`;
         c.loadout = validLoadout(msg.loadout);
-        // ID bạn bè: máy khách giữ và gửi lại mã cũ; trùng với người đang online hoặc sai dạng thì cấp mã mới
+
         let code = clean(msg.code, 10).toUpperCase();
-        const taken = (x) => [...clients.values()].some((o) => o !== c && o.code === x);
-        if (!CODE_RE.test(code) || taken(code)) {
+        const secret = typeof msg.secret === 'string' ? msg.secret.trim() : '';
+        const isValid = CODE_RE.test(code);
+
+        if (isValid && identities.has(code)) {
+          // Mã đã được đăng ký: chỉ cấp lại nếu đúng secret
+          if (secret && identities.get(code) === secret) {
+            // Đúng chủ sở hữu: giải phóng kết nối cũ nếu còn kẹt (rớt mạng, chuyển Wi-Fi)
+            const oldClient = codes.get(code);
+            if (oldClient && oldClient !== c) {
+              codes.delete(code);
+              oldClient.code = '';
+              try {
+                oldClient.ws.close(4001, 'Được thay thế bởi kết nối mới');
+              } catch {}
+            }
+            c.code = code;
+            c.secret = secret;
+          } else {
+            // Không đúng secret: không cho chiếm ID người khác, cấp ID ngẫu nhiên mới
+            do code = randomCode();
+            while (codes.has(code) || identities.has(code));
+            c.code = code;
+            c.secret = randomSecret();
+            identities.set(c.code, c.secret);
+          }
+        } else if (isValid && !codes.has(code)) {
+          // Mã hợp lệ và chưa ai đăng ký
+          c.code = code;
+          c.secret = secret || randomSecret();
+          identities.set(c.code, c.secret);
+        } else {
+          // Mã sai dạng hoặc đã bị chiếm giữ
           do code = randomCode();
-          while (taken(code));
+          while (codes.has(code) || identities.has(code));
+          c.code = code;
+          c.secret = randomSecret();
+          identities.set(c.code, c.secret);
         }
-        c.code = code;
-        send(c, { t: 'welcome', id: c.id, name: c.name, code, history });
+
+        codes.set(c.code, c);
+        send(c, { t: 'welcome', id: c.id, name: c.name, code: c.code, secret: c.secret, history });
         send(c, { t: 'board', top: topBoard() });
         broadcastLobby();
-        log(`+ ${c.name} (${c.id})`);
+        log(`+ ${c.name} (${c.id}) [${c.code}]`);
         break;
       }
       case 'loadout': {
@@ -244,13 +285,56 @@ export function attachGameServer(httpServer, { path = WS_PATH, log = () => {}, b
         break;
       case 'invite': {
         if (!c.name) break;
+
+        // 1. Kiểm tra trạng thái phòng của chính người mời trước tiên (tránh rò rỉ presence)
+        const myRoom = c.room && rooms.get(c.room);
+        if (myRoom && myRoom.state !== 'waiting') {
+          return send(c, { t: 'error', msg: 'Bạn đang trong trận, chưa thể mời.' });
+        }
+        if (myRoom && myRoom.members.length >= MAX_PLAYERS) {
+          return send(c, { t: 'error', msg: `Phòng đã đủ ${MAX_PLAYERS} người.` });
+        }
+
         const code = clean(msg.code, 10).toUpperCase();
         if (code === c.code) return send(c, { t: 'error', msg: 'Đó là ID của chính bạn.' });
-        const target = [...clients.values()].find((o) => o.code === code && o.name);
-        if (!target) return send(c, { t: 'error', msg: `Không thấy ai đang trực tuyến với ID ${code || '?'}. Bạn bè cần mở game và kết nối trước.` });
+
+        // 2. Giới hạn tần suất mời của người gửi (tối đa burst 3, hồi 1 token/giây)
+        if (c.inviteTokens === undefined) {
+          c.inviteTokens = 3;
+          c.lastInviteTokenAt = now;
+        } else {
+          c.inviteTokens = Math.min(3, c.inviteTokens + (now - c.lastInviteTokenAt) / 1000);
+          c.lastInviteTokenAt = now;
+        }
+        if (c.inviteTokens < 1) {
+          return send(c, { t: 'error', msg: 'Bạn đang gửi lời mời quá nhanh, vui lòng chờ giây lát.' });
+        }
+        c.inviteTokens -= 1;
+
+        // 3. Tra cứu người nhận bằng codes Map O(1)
+        const target = codes.get(code);
+        if (!target || !target.name) {
+          return send(c, { t: 'error', msg: `Không thấy ai đang trực tuyến với ID ${code || '?'}. Bạn bè cần mở game và kết nối trước.` });
+        }
+
+        // 4. Kiểm tra xem người nhận đã ở trong phòng của mình chưa
+        if (myRoom && myRoom.members.includes(target.id)) {
+          return send(c, { t: 'error', msg: `${target.name} đã ở trong phòng của bạn.` });
+        }
+
+        // 5. Kiểm tra trạng thái trận của người nhận
         const tr = target.room && rooms.get(target.room);
         if (tr && tr.state === 'playing') return send(c, { t: 'error', msg: `${target.name} đang trong trận.` });
-        // chưa có phòng thì tự tạo một phòng riêng rồi mời vào
+
+        // 6. Chống spam popup dồn dập vào cùng một mục tiêu (tối thiểu 8s giữa 2 lần mời cùng người)
+        if (!target.recentInvites) target.recentInvites = new Map();
+        const lastFromC = target.recentInvites.get(c.id) ?? 0;
+        if (now - lastFromC < 8000) {
+          return send(c, { t: 'error', msg: `Bạn vừa gửi lời mời tới ${target.name}, vui lòng đợi.` });
+        }
+        target.recentInvites.set(c.id, now);
+
+        // 7. Tạo phòng nếu người mời chưa có phòng
         if (!c.room) {
           let id;
           do id = Math.random().toString(36).slice(2, 6).toUpperCase();
@@ -261,6 +345,7 @@ export function attachGameServer(httpServer, { path = WS_PATH, log = () => {}, b
         if (!r || r.state !== 'waiting') return send(c, { t: 'error', msg: 'Bạn đang trong trận, chưa thể mời.' });
         if (r.members.includes(target.id)) return send(c, { t: 'error', msg: `${target.name} đã ở trong phòng của bạn.` });
         if (r.members.length >= MAX_PLAYERS) return send(c, { t: 'error', msg: `Phòng đã đủ ${MAX_PLAYERS} người.` });
+
         send(target, { t: 'invited', from: c.name, fromCode: c.code, room: r.id });
         send(c, { t: 'invite_sent', name: target.name });
         break;
@@ -322,7 +407,7 @@ export function attachGameServer(httpServer, { path = WS_PATH, log = () => {}, b
   }
 
   wss.on('connection', (ws) => {
-    const c = { id: String(nextId++), ws, name: '', room: null, ready: false, loadout: null, alive: true, windowAt: 0, count: 0, relayCount: 0 };
+    const c = { id: String(nextId++), ws, name: '', room: null, ready: false, loadout: null, alive: true, windowAt: 0, count: 0, relayCount: 0, code: '', secret: '', welcomed: false, inviteTokens: 3, lastInviteTokenAt: 0 };
     clients.set(c.id, c);
     ws.on('pong', () => (c.alive = true));
     ws.on('message', (data) => {
@@ -340,6 +425,7 @@ export function attachGameServer(httpServer, { path = WS_PATH, log = () => {}, b
     });
     ws.on('close', () => {
       leaveRoom(c, 'mất kết nối');
+      if (c.code && codes.get(c.code) === c) codes.delete(c.code);
       clients.delete(c.id);
       if (c.name) log(`- ${c.name} (${c.id})`);
       broadcastLobby();

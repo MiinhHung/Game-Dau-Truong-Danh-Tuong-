@@ -40,6 +40,8 @@ export interface ChatMsg {
   at: number;
 }
 
+export const CODE_RE = /^HV-[A-Z0-9]{4,6}$/;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Msg = { t: string } & Record<string, any>;
 type Handler = (m: Msg) => void;
@@ -73,6 +75,8 @@ export class NetClient {
   name = '';
   /** ID bạn bè (dạng HV-XXXX) do máy chủ xác nhận. */
   code = '';
+  /** Mã bí mật xác thực quyền sở hữu ID bạn bè. */
+  secret = '';
   private ws: WebSocket | null = null;
   private handlers = new Map<string, Set<Handler>>();
   private closeHandlers = new Set<(reason: string) => void>();
@@ -92,7 +96,7 @@ export class NetClient {
     this.closeHandlers.add(fn);
   }
 
-  connect(url: string, name: string, loadout: Loadout, code = '', timeoutMs = 6000): Promise<void> {
+  connect(url: string, name: string, loadout: Loadout, code = '', secret = '', timeoutMs = 6000): Promise<void> {
     this.close();
     return new Promise((resolve, reject) => {
       let settled = false;
@@ -111,7 +115,7 @@ export class NetClient {
           reject(new Error('Hết thời gian chờ. Kiểm tra địa chỉ máy chủ và đảm bảo máy chủ đang chạy.'));
         }
       }, timeoutMs);
-      ws.onopen = () => ws.send(JSON.stringify({ t: 'hello', name, loadout, code }));
+      ws.onopen = () => ws.send(JSON.stringify({ t: 'hello', name, loadout, code, secret }));
       ws.onmessage = (ev) => {
         let m: Msg;
         try {
@@ -125,6 +129,7 @@ export class NetClient {
           this.id = m.id;
           this.name = m.name;
           this.code = String(m.code ?? '');
+          this.secret = String(m.secret ?? '');
           resolve();
         }
         this.handlers.get(m.t)?.forEach((fn) => fn(m));

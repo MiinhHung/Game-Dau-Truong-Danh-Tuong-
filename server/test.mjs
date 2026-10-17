@@ -228,6 +228,46 @@ ok(K.last('joined')?.room.players.length === 2 && J.last('room')?.room.players.l
 J.send({ t: 'invite', code: 'HV-ZZ99' });
 await sleep(100);
 ok(J.last('error')?.msg.includes('đã ở trong phòng'), 'mời người đã ở trong phòng bị từ chối');
+
+// Reconnect với secret giữ nguyên ID dù socket cũ chưa kịp đóng
+const kimSecret = K.last('welcome')?.secret;
+ok(kimSecret && kimSecret.length >= 16, 'máy chủ cấp secret token trong welcome');
+const K_reconnect = client('Kim_Re');
+await K_reconnect.ready;
+K_reconnect.send({ t: 'hello', name: 'Kim', loadout, code: 'HV-ZZ99', secret: kimSecret });
+await sleep(150);
+ok(K_reconnect.last('welcome')?.code === 'HV-ZZ99', 'reconnect với đúng secret giữ lại ID cố định dù kết nối cũ chưa đóng');
+K_reconnect.ws.close();
+
+// Chiếm đoạt mã khi người đó offline bị từ chối
+K.ws.close();
+await sleep(100);
+const Mallory = client('Mallory');
+await Mallory.ready;
+Mallory.send({ t: 'hello', name: 'Mallory', loadout, code: 'HV-ZZ99' }); // không có secret của Kim
+await sleep(150);
+ok(Mallory.last('welcome')?.code !== 'HV-ZZ99', 'không thể chiếm ID của người khác khi họ offline nếu thiếu secret');
+Mallory.ws.close();
+
+// Kiểm tra trạng thái trận của người mời trước khi tra cứu mục tiêu
+// J bắt đầu trận một mình trong phòng của J
+J.send({ t: 'start' });
+await sleep(100);
+J.send({ t: 'invite', code: 'HV-NONE' });
+await sleep(100);
+ok(J.last('error')?.msg.includes('Bạn đang trong trận'), 'người mời đang trong trận bị từ chối trước khi tra cứu mục tiêu');
+
+// Giới hạn tần suất mời (rate limit)
+const Spammer = client('Spammer');
+await Spammer.ready;
+Spammer.send({ t: 'hello', name: 'Spammer', loadout });
+await sleep(100);
+// Gửi liên tục 6 lời mời để tiêu hết 3 token burst
+for (let i = 0; i < 6; i++) Spammer.send({ t: 'invite', code: 'HV-NONE' });
+await sleep(150);
+ok(Spammer.all('error').some((e) => e.msg.includes('quá nhanh')), 'gửi lời mời liên tục bị chặn bởi rate limit');
+Spammer.ws.close();
+
 for (const x of [J, K]) x.ws.close();
 
 for (const x of [A, B, C, D, E, F, G, H, I]) x.ws.close();

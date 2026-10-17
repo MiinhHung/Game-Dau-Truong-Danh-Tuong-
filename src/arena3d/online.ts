@@ -1,5 +1,5 @@
 import { GENERALS, WEAPONS } from './data';
-import { FIXED_SERVER, defaultServerUrl, normalizeServerUrl, type ChatMsg, type NetClient, type PlayerInfo, type RoomInfo, type RoomSummary } from './net';
+import { CODE_RE, FIXED_SERVER, defaultServerUrl, normalizeServerUrl, type ChatMsg, type NetClient, type PlayerInfo, type RoomInfo, type RoomSummary } from './net';
 import { loadoutOf, writeSave, type Save3D } from './save';
 import { sfx } from './sfx';
 import { escapeHtml } from './ui';
@@ -7,17 +7,26 @@ import { escapeHtml } from './ui';
 const NAME_KEY = 'honviet_arena3d_name';
 const URL_KEY = 'honviet_arena3d_server';
 const CODE_KEY = 'honviet_arena3d_code';
-const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const SECRET_KEY = 'honviet_arena3d_secret';
 
-/** ID bạn bè của máy này: tạo một lần, lưu lại để lần sau vẫn là ID đó. */
-function myCode(): string {
+/** Lấy ID bạn bè đã được máy chủ cấp và lưu trước đó. */
+function getSavedCode(): string {
   try {
     const saved = localStorage.getItem(CODE_KEY);
-    if (saved && /^HV-[A-Z0-9]{4,6}$/.test(saved)) return saved;
+    if (saved && CODE_RE.test(saved)) return saved;
   } catch {
-    /* không lưu được thì tạo tạm */
+    /* bỏ qua */
   }
-  return 'HV-' + Array.from({ length: 4 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
+  return '';
+}
+
+/** Lấy mã bí mật của ID bạn bè để chứng minh quyền sở hữu khi kết nối lại. */
+function getSavedSecret(): string {
+  try {
+    return localStorage.getItem(SECRET_KEY) ?? '';
+  } catch {
+    return '';
+  }
 }
 
 export interface StartInfo {
@@ -28,6 +37,8 @@ export interface StartInfo {
 export interface OnlineHooks {
   net: NetClient;
   save: Save3D;
+  /** Kiểm tra xem người chơi có đang trong trận đánh (đơn hoặc online) hay không. */
+  isPlaying?(): boolean;
   /** Máy chủ báo bắt đầu trận. */
   onStart(info: StartInfo): void;
   /** Người dùng đóng màn hình trực tuyến để về sảnh chính. */
@@ -105,7 +116,7 @@ export class OnlineUI {
     net.on('error', (m) => this.toast(String(m.msg), true));
     net.on('invite_sent', (m) => this.toast(`Đã gửi lời mời tới ${String(m.name)}.`));
     net.on('invited', (m) => {
-      if (!this.inGame) this.showInvite(String(m.from), String(m.fromCode), String(m.room));
+      if (!this.inGame && !this.h.isPlaying?.()) this.showInvite(String(m.from), String(m.fromCode), String(m.room));
     });
     net.on('start', (m) => {
       this.inGame = true;
@@ -240,7 +251,7 @@ export class OnlineUI {
   private buildConnect(): void {
     const name = localStorage.getItem(NAME_KEY) ?? '';
     const url = localStorage.getItem(URL_KEY) ?? '';
-    const code = myCode();
+    const code = getSavedCode();
     const fixed = !!FIXED_SERVER;
     this.root.innerHTML = `
       <header class="top">
@@ -250,8 +261,8 @@ export class OnlineUI {
       <div class="center-card panel">
         <h2>Kết nối</h2>
         <label class="field">Tên của bạn<input id="on-name" maxlength="16" value="${escapeHtml(name)}" placeholder="Ví dụ: Hùng" autocomplete="off" /></label>
-        <div class="idbox"><span>ID của bạn</span><b>${escapeHtml(code)}</b></div>
-        <p class="hint-text">Game cấp cho bạn một ID cố định. Gửi ID này cho bạn bè, hoặc nhập ID của họ trong sảnh để mời nhau vào cùng phòng.</p>
+        <div class="idbox"><span>ID của bạn</span><b>${escapeHtml(code || '(Được cấp khi kết nối)')}</b></div>
+        <p class="hint-text">${code ? 'Game cấp cho bạn một ID cố định. Gửi ID này cho bạn bè, hoặc nhập ID của họ trong sảnh để mời nhau vào cùng phòng.' : 'Bạn sẽ được cấp một ID cố định khi kết nối lần đầu. Bạn bè có thể dùng ID này để mời bạn vào phòng.'}</p>
         ${
           fixed
             ? '<p class="hint-text">Lần kết nối đầu tiên trong ngày có thể mất tới một phút vì máy chủ cần khởi động.</p>'
@@ -279,9 +290,10 @@ export class OnlineUI {
       go.disabled = true;
       go.textContent = fixed ? 'Đang kết nối, có thể mất tới 1 phút...' : 'Đang kết nối...';
       try {
-        await this.h.net.connect(normalizeServerUrl(urlRaw), nm, loadoutOf(this.h.save), code, fixed ? 70000 : 6000);
+        await this.h.net.connect(normalizeServerUrl(urlRaw), nm, loadoutOf(this.h.save), code, getSavedSecret(), fixed ? 70000 : 6000);
         try {
           localStorage.setItem(CODE_KEY, this.h.net.code);
+          if (this.h.net.secret) localStorage.setItem(SECRET_KEY, this.h.net.secret);
         } catch {
           /* bỏ qua */
         }
@@ -490,7 +502,7 @@ export class OnlineUI {
       if (!input) return;
       let code = input.value.trim().toUpperCase();
       if (code && !code.startsWith('HV-') && /^[A-Z0-9]{4,6}$/.test(code)) code = `HV-${code}`;
-      if (!/^HV-[A-Z0-9]{4,6}$/.test(code)) return this.toast('ID bạn bè có dạng HV-XXXX.', true);
+      if (!CODE_RE.test(code)) return this.toast('ID bạn bè có dạng HV-XXXX.', true);
       net.send({ t: 'invite', code });
       input.value = '';
     };
@@ -514,7 +526,7 @@ export class OnlineUI {
     el.querySelector('#inv-no')!.addEventListener('click', close);
     el.querySelector('#inv-yes')!.addEventListener('click', () => {
       close();
-      if (this.inGame) return;
+      if (this.inGame || this.h.isPlaying?.()) return;
       this.h.net.send({ t: 'join', id: room });
       if (!this.visible) this.open();
     });

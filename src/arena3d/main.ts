@@ -48,6 +48,7 @@ function syncPreview(): void {
 const online = new OnlineUI({
   net,
   save,
+  isPlaying: () => mode === 'arena',
   onStart: (info) => startOnlineRun(info),
   onBack: () => {
     online.hide();
