@@ -13,11 +13,14 @@ npm run dev        # chạy thử tại http://localhost:5173
 
 | Lệnh | Tác dụng |
 |---|---|
+| `npm run dev` | Chạy dev server tại `http://localhost:5173` |
 | `npm run build` | Kiểm tra kiểu TypeScript và đóng gói vào `dist/` |
 | `npm run preview` | Chạy thử bản đã đóng gói |
-| `npm run typecheck` | Chỉ kiểm tra kiểu |
+| `npm run typecheck` | Chỉ kiểm tra kiểu TypeScript |
 | `npm run server` | Máy chủ độc lập phục vụ bản build và sảnh chơi cùng bạn bè (cổng 8787) |
-| `npm run test:server` | Kiểm thử máy chủ sảnh và phòng |
+| `npm run test:server` | Kiểm thử 47 ca tích hợp máy chủ sảnh và phòng |
+| `npm run balance` | Mô phỏng và kiểm tra tự động cân bằng sát thương & máu quái |
+| `docker compose up` | Chạy ứng dụng qua Docker container độc lập |
 
 ## Luồng chơi
 
@@ -54,7 +57,7 @@ Mỗi tướng có chỉ số riêng (nội tại) và một **chiêu cuối ri�
 | Nguyễn Trãi | Bình Ngô Đại Cáo | 30 giây | Đồng đội trong tầm 16 được hồi 15% máu, tăng 25% sát thương 8 giây và giảm sát thương nhận 3 giây; quái bị chấn động, hoảng sợ 2,5 giây và chậm đi |
 | Phù Đổng Thiên Vương | Nhổ Tre Đằng Ngà | 26 giây | Nhổ bụi tre đằng ngà quật ba vòng quanh người (tầm 11, hất văng mạnh) rồi một đòn cuối tầm 14 làm choáng quái 1,5 giây |
 
-Boss chỉ bị choáng rất ngắn và miễn nhiễm Hoảng Sợ. Chiêu của 6 tướng theo mô tả của bạn; riêng Trần Hưng Đạo (bạn chưa gửi mô tả) là thiết kế của mình. Có thể đổi trong `src/arena3d/data.ts` (mô tả, hồi chiêu) và các hàm `ult...` trong `src/arena3d/arena.ts` (hiệu ứng).
+Boss chỉ bị choáng rất ngắn và miễn nhiễm Hoảng Sợ. Chiêu của 6 tướng theo mô tả của bạn; riêng Trần Hưng Đạo (bạn chưa gửi mô tả) là thiết kế của mình. Có thể đổi trong `src/domain/data/index.ts` (mô tả, hồi chiêu) và các hàm `ult...` trong `src/game/arena.ts` (hiệu ứng).
 
 ## 7 vũ khí dân dã
 
@@ -224,31 +227,32 @@ Vàng, vũ khí, trang bị, tướng đã chọn và kỷ lục lưu trong `loc
 ## Cấu trúc dự án
 
 ```
-index.html                   Trang game
-server/
-  rooms.mjs                  Máy chủ sảnh và phòng (WebSocket), dùng chung cho dev và độc lập
-  index.mjs                  Máy chủ độc lập: phục vụ bản build và sảnh tại /ws
-  test.mjs                   Kiểm thử máy chủ sảnh
-src/arena3d/
-  main.ts                    Khởi tạo renderer, chuyển giữa sảnh và trận
-  data.ts                    Tướng, vũ khí, trang bị, quái, thành phần các đợt
-  stats.ts                   Tính chỉ số từ tướng, vũ khí, trang bị
-  save.ts, shop.ts           Lưu game, mua bán
-  models.ts                  Mô hình 3D dựng bằng code (người, vũ khí, quái, đạn)
-  world.ts                   Sân đấu và sảnh chờ
-  arena.ts                   Chiến đấu, quái, đợt, vàng, đồng bộ chủ phòng và máy khách
-  arenaTypes.ts, sfx.ts      Kiểu dữ liệu, âm thanh
-  net.ts, online.ts          Kết nối mạng, giao diện sảnh ghép trận và phòng chờ
-  lobby.ts, ui.ts            Cảnh sảnh và giao diện DOM
-  biomes.ts, worldKit.ts     Tám bản đồ (cảnh, thời tiết, quái) và công cụ dựng chung
-  cards.ts, quests.ts        Thẻ nâng cấp, nhiệm vụ ngày và thành tích
-  hazards.ts, settings.ts    Mối nguy chế độ vô tận, cài đặt người chơi
-  ambience.ts, touch.ts      Âm nền theo bản đồ, điều khiển cảm ứng
-  arena3d.css                Kiểu giao diện
+index.html                   Trang game chính (Canvas + UI Containers)
+server/                      Máy chủ WebSocket và HTTP phục vụ game
+  config.mjs                 Cấu hình tập trung máy chủ (PORT, RATE_LIMITS, WS_PATH)
+  logger.mjs                 Logger máy chủ định dạng chuẩn thời gian
+  rooms.mjs                  Quản lý sảnh, phòng, bảo mật ID bạn bè, bảng xếp hạng
+  index.mjs                  Máy chủ độc lập phục vụ bản build và sảnh tại /ws
+  test.mjs                   Bộ 47 ca kiểm thử tích hợp máy chủ
+src/                         Mã nguồn ứng dụng chuẩn doanh nghiệp
+  config/                    Quản lý biến môi trường, storage keys, hằng số game
+  shared/                    Tiện ích logging và xử lý lỗi tập trung
+  domain/                    Logic nghiệp vụ thuần (Data, Stats, Cards, Quests, Shop)
+  infrastructure/            Hạ tầng kết nối mạng (WebSocket), lưu trữ và âm thanh
+  rendering/                 Dựng hình 3D Three.js (Models, Biomes, Shaders, World, FX)
+  game/                      Vòng lặp trận đấu, types và hệ thống Minimap 2D
+  ui/                        HUD, màn hình sảnh, modal trực tuyến và điều khiển cảm ứng
+  main.ts                    Entry point chính của ứng dụng
 tools/
   gen-model.mjs              Tạo model .glb từ ảnh bằng API image-to-3D
-  balance.mjs                Kiểm tra cân bằng ước lượng
+  balance.mjs                Kiểm tra cân bằng sát thương & máu quái tự động
+docs/
+  ARCHITECTURE.md            Tài liệu kiến trúc hệ thống và luồng dữ liệu chi tiết
+  REFACTOR_ANALYSIS.md       Báo cáo phân tích hiện trạng mã nguồn
+CHANGELOG.md                 Nhật ký thay đổi và cấu trúc tệp di chuyển
 ```
+
+> Chi tiết sơ đồ kiến trúc và luồng dữ liệu được mô tả đầy đủ tại [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Chỉnh nội dung
 

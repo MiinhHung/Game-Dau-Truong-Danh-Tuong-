@@ -32,10 +32,21 @@ const CSV = args.includes('--csv');
 const tmp = mkdtempSync(join(tmpdir(), 'honviet-balance-'));
 mkdirSync(tmp, { recursive: true });
 writeFileSync(join(tmp, 'package.json'), '{"type":"module"}');
-for (const f of ['data', 'stats', 'cards', 'hazards']) {
-  const src = readFileSync(join(root, 'src', 'arena3d', `${f}.ts`), 'utf8');
-  const out = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText.replace(/from '\.\/(\w+)'/g, "from './$1.js'");
-  writeFileSync(join(tmp, `${f}.js`), out);
+const fileMap = {
+  data: join(root, 'src', 'domain', 'data', 'index.ts'),
+  stats: join(root, 'src', 'domain', 'combat', 'stats.ts'),
+  cards: join(root, 'src', 'domain', 'combat', 'cards.ts'),
+  hazards: join(root, 'src', 'rendering', 'fx', 'hazards.ts'),
+};
+for (const [name, filePath] of Object.entries(fileMap)) {
+  const src = readFileSync(filePath, 'utf8');
+  const out = ts
+    .transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } })
+    .outputText.replace(/from\s+['"](?:\.\.|\.)\/(?:data|stats|cards|hazards)(?:\/index)?['"]/g, (m) => {
+      const target = m.match(/(data|stats|cards|hazards)/)[1];
+      return `from './${target}.js'`;
+    });
+  writeFileSync(join(tmp, `${name}.js`), out);
 }
 const load = (f) => import(pathToFileURL(join(tmp, `${f}.js`)).href);
 const data = await load('data');

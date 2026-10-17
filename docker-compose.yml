@@ -1,0 +1,18 @@
+services:
+  hon-viet-game:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hon-viet-3d:latest
+    container_name: hon-viet-3d-app
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    environment:
+      - PORT=8787
+      - NODE_ENV=production
+    volumes:
+      - leaderboard-data:/app/server/data
+
+volumes:
+  leaderboard-data:

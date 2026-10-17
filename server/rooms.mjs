@@ -10,16 +10,17 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
+import { SERVER_CONFIG } from './config.mjs';
 
-const MAX_PLAYERS = 4;
-const MAX_CHAT = 200;
-const HISTORY = 60;
-const WS_PATH = '/ws';
-const BOARD_MAX = 30;
-const DEFAULT_BOARD_FILE = fileURLToPath(new URL('./data/leaderboard.json', import.meta.url));
+const MAX_PLAYERS = SERVER_CONFIG.MAX_PLAYERS;
+const MAX_CHAT = SERVER_CONFIG.MAX_CHAT_LENGTH;
+const HISTORY = SERVER_CONFIG.CHAT_HISTORY_SIZE;
+const WS_PATH = SERVER_CONFIG.WS_PATH;
+const BOARD_MAX = SERVER_CONFIG.LEADERBOARD_MAX_ENTRIES;
+const DEFAULT_BOARD_FILE = SERVER_CONFIG.DEFAULT_BOARD_FILE;
 
 const clean = (s, max) => String(s ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max);
-const CODE_RE = /^HV-[A-Z0-9]{4,6}$/;
+const CODE_RE = SERVER_CONFIG.CODE_REGEX;
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const randomCode = () => 'HV-' + Array.from({ length: 4 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
 const randomSecret = () => randomBytes(16).toString('hex');

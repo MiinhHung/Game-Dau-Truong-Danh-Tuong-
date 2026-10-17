@@ -11,9 +11,11 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { attachGameServer } from './rooms.mjs';
+import { SERVER_CONFIG } from './config.mjs';
+import { serverLogger, formatLog } from './logger.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)), 'dist');
-const port = Number(process.env.PORT) || 8787;
+const port = SERVER_CONFIG.PORT;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -46,13 +48,18 @@ const server = createServer((req, res) => {
     }
     res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream' });
     res.end(readFileSync(file));
-  } catch {
+  } catch (err) {
+    serverLogger.error(`Yêu cầu lỗi: ${err?.message || err}`);
     res.writeHead(500).end();
   }
 });
 
-const game = attachGameServer(server, { log: (m) => console.log(new Date().toLocaleTimeString('vi-VN'), m) });
+const game = attachGameServer(server, {
+  path: SERVER_CONFIG.WS_PATH,
+  log: (m) => console.log(formatLog('SẢNH', m)),
+});
+
 server.listen(port, '0.0.0.0', () => {
-  console.log(`Hồn Việt 3D đang chạy tại http://localhost:${port}`);
-  console.log('Bạn bè cùng mạng vào bằng địa chỉ IP của máy này với cùng cổng.');
+  serverLogger.info(`Hồn Việt 3D đang chạy tại http://localhost:${port}`);
+  serverLogger.info('Bạn bè cùng mạng vào bằng địa chỉ IP của máy này với cùng cổng.');
 });
