@@ -57,7 +57,7 @@ Mỗi tướng có chỉ số riêng (nội tại) và một **chiêu cuối ri�
 | Nguyễn Trãi | Bình Ngô Đại Cáo | 30 giây | Đồng đội trong tầm 16 được hồi 15% máu, tăng 25% sát thương 8 giây và giảm sát thương nhận 3 giây; quái bị chấn động, hoảng sợ 2,5 giây và chậm đi |
 | Phù Đổng Thiên Vương | Nhổ Tre Đằng Ngà | 26 giây | Nhổ bụi tre đằng ngà quật ba vòng quanh người (tầm 11, hất văng mạnh) rồi một đòn cuối tầm 14 làm choáng quái 1,5 giây |
 
-Boss chỉ bị choáng rất ngắn và miễn nhiễm Hoảng Sợ. Chiêu của 6 tướng theo mô tả của bạn; riêng Trần Hưng Đạo (bạn chưa gửi mô tả) là thiết kế của mình. Có thể đổi trong `src/domain/data/index.ts` (mô tả, hồi chiêu) và các hàm `ult...` trong `src/game/arena.ts` (hiệu ứng).
+Boss chỉ bị choáng rất ngắn và miễn nhiễm Hoảng Sợ. 
 
 ## 7 vũ khí dân dã
 
