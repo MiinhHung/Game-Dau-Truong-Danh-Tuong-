@@ -11,7 +11,7 @@ export interface Hud {
   setWave(text: string): void;
   setGold(run: number, total: number): void;
   setKills(n: number): void;
-  setCooldowns(atk: number, dash: number, ult: number, e: number): void;
+  setCooldowns(atk: number, dash: number, ult: number, e: number, remDash?: number, remUlt?: number, remE?: number): void;
   setLoadout(weapon: string, ult: string, e: string): void;
   /** Cấp và tiến độ kinh nghiệm (0..1) của bạn. */
   setXp(level: number, ratio: number): void;
@@ -32,6 +32,10 @@ export interface Hud {
   clearTags(): void;
   setGeneral?(generalId: string): void;
   setPaused?(p: boolean): void;
+  setStats?(stats: { dmg: number; atkSpd: number; def: number; crit: number; spd: number; cdr: number }): void;
+  setPendingLevels?(count: number): void;
+  toggleLevelupPopover?(): void;
+  isLevelupPopoverOpen?(): boolean;
 }
 
 export interface RunResult {

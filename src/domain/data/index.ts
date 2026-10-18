@@ -42,7 +42,7 @@ export interface General {
   ult: string;
   ultColor: number;
   /** Kiểu chiêu cuối, quyết định cách thi triển trong arena.ts. */
-  ultKind: 'army' | 'rush' | 'dragon' | 'summon' | 'rage' | 'swamp' | 'poem' | 'proclaim' | 'bamboo';
+  ultKind: 'army' | 'rush' | 'dragon' | 'summon' | 'rage' | 'swamp' | 'poem' | 'proclaim' | 'bamboo' | 'con_son_stream';
   ultCd: number;
   ultDesc: string;
   look: HumanSpec;
@@ -86,7 +86,7 @@ export const GENERALS: General[] = [
     passive: 'Cọc Bạch Đằng: +25% sát thương vũ khí bắn xa.',
     hp: 1, speed: 1, dmg: 1, crit: 0.05, atkSpeed: 1, proj: 1.25,
     ult: 'Trận Đồ Bộc Phá', ultColor: 0x4aa8e8, ultKind: 'swamp', ultCd: 24,
-    ultDesc: 'Chỉ chuột để chọn điểm rơi (tầm tối đa 20, có vòng chỉ định), giậm chân biến vùng đất quanh điểm đó thành đầm lầy trong 10 giây, các cây cọc nhọn trồi lên từ bùn: quái bước vào bị giảm 60% tốc độ và bị cọc đâm mỗi giây.',
+    ultDesc: 'Chỉ chuột để chọn điểm rơi (tầm tối đa 20), giậm chân biến vùng đất quanh điểm đó thành đầm lầy trong 10 giây, các cây cọc nhọn trồi lên từ bùn: quái bước vào bị giảm 60% tốc độ và bị cọc đâm mỗi giây.',
     look: { skin: 0xdfaa80, hair: 0x14100e, top: 0x244f8a, topDark: 0x183560, pants: 0x1e2230, boots: 0x14141a, trim: 0xc8d0e0, hat: 'helmet', hatColor: 0x8a96a8, plume: 0x4aa8e8, cape: 0x183560 },
   },
   {
@@ -109,8 +109,8 @@ export const GENERALS: General[] = [
     id: 'nguyen_trai', name: 'Nguyễn Trãi', title: 'Ức Trai Tiên Sinh',
     passive: 'Mưu sâu kế hiểm: +12% chí mạng, +5% tốc độ đánh.',
     hp: 0.92, speed: 1.05, dmg: 1, crit: 0.17, atkSpeed: 1.05, proj: 1,
-    ult: 'Bình Ngô Đại Cáo', ultColor: 0x9ad0ff, ultKind: 'proclaim', ultCd: 30,
-    ultDesc: 'Tuyên đọc bài cáo vang dội: đồng đội trong tầm 16 được hồi 15% máu, tăng 25% sát thương 8 giây và giảm sát thương nhận trong 3 giây; quái bị chấn động, hoảng sợ 2,5 giây và chậm đi.',
+    ult: 'Suối Côn Sơn Bào Mòn', ultColor: 0x2dd4bf, ultKind: 'con_son_stream', ultCd: 24,
+    ultDesc: 'Nguyễn Trãi vung quạt trúc niệm thơ, từ dưới chân xuất hiện một dòng suối ngọc xanh biếc Côn Sơn cuộn trào về phía trước trong 4.5 giây: nước cuộn sóng biếc, bọt trắng sương mờ; liên tục gây sát thương, làm chậm 60% và đẩy lùi mạnh mẽ mọi quái vật theo dòng nước.',
     look: { skin: 0xe8c9a4, hair: 0x1a1410, top: 0x2a4a8a, topDark: 0x1a3060, pants: 0x2a2a3a, boots: 0x181418, trim: 0xe0c060, hat: 'quan', hatColor: 0x15151f },
   },
   {
@@ -177,15 +177,22 @@ export interface ESkill {
 }
 
 export const ESKILLS: Record<string, ESkill> = {
-  tran_hung_dao: { name: 'Hỏa Thuyền Phá Trận', desc: 'Triệu hồi đội thuyền lửa lao thẳng theo hướng chỉ định, để lại đường lửa dài. Kẻ địch trúng đòn chịu sát thương và bị thiêu đốt 3 giây.', cd: 12, aim: 'line', range: 20, size: 5 },
-  quang_trung: { name: 'Hỏa Pháo', desc: 'Pháo kích điểm chỉ định, tầm xa tới 16. Nổ vùng, đốt cháy quái 3 giây.', cd: 9, aim: 'circle', range: 16, size: 5.5 },
-  le_loi: { name: 'Kim Quang Hộ Thể', desc: 'Giảm 60% sát thương nhận vào trong 4 giây và tạo lá chắn bao quanh, hấp thụ lượng sát thương bằng 40% máu tối đa.', cd: 16, aim: 'self', range: 0 },
+  tran_hung_dao: { name: 'Hỏa Thuyền Phá Trận', desc: 'Triệu hồi hạm đội chiến thuyền lửa hình mũi tên xé toạc màn sương và sóng nước Bạch Đằng, để lại đường lửa thiêu đốt và chuỗi nổ tung áp đảo quân địch.', cd: 12, aim: 'line', range: 24, size: 6.5 },
+  quang_trung: { name: 'Thần Tốc Hỏa Pháo', desc: 'Bộc phát khí thế thần tốc đại phá quân Thanh, phóng xung lực hỏa long pháo xé toạc không gian với tốc độ cực đại, xuyên thủng và thiêu đốt đội hình địch trong biển lửa bão táp.', cd: 9, aim: 'line', range: 20, size: 6.0 },
+  le_loi: { name: 'Kim Quang Hộ Thể', desc: 'Ngưng tụ Hoàng Long Lam Sơn và long khí hoàng đế, tạo hộ thể hoàng kim bán kính 3.5m tồn tại 6 giây: giảm 60% sát thương, tạo lá chắn 45% máu tối đa, hất văng và làm choáng quái xung quanh.', cd: 16, aim: 'self', range: 0 },
   hai_ba_trung: { name: 'Cồng Mê Linh', desc: 'Dấu cộng xanh lá xoay quanh người, hồi 30% máu tối đa cho bạn và đồng đội trong tầm 10.', cd: 18, aim: 'self', range: 0 },
-  ba_trieu: { name: 'Cuồng Phong Chưởng', desc: 'Tung luồng chưởng phong hình quạt về phía trước, gây sát thương và đẩy lùi. Giữ chuột để tụ lực: bay xa hơn, mạnh hơn.', cd: 9, aim: 'cone', range: 8, half: 0.62, charge: { sec: 1.2, extra: 7 } },
-  ngo_quyen: { name: 'Thủy Long Xung Kích', desc: 'Làn sóng nước hình rồng lao thẳng về phía trước, gây sát thương và hất tung mọi kẻ địch trúng phải.', cd: 11, aim: 'line', range: 18, size: 4.5 },
+  ba_trieu: { name: 'Cuồng Phong Chưởng', desc: 'Tụ khí ngàn dặm, tung bão tố chưởng phong hình cánh cung xé gió. Giữ chuột để tụ lực: tầm xa lên tới 26m, thổi bay và đẩy lùi kẻ địch với uy lực kinh thiên động địa.', cd: 9, aim: 'cone', range: 15, half: 0.65, charge: { sec: 1.2, extra: 11 } },
+  ngo_quyen: { name: 'Bạch Đằng Thủy Trận', desc: 'Kêu gọi thủy triều sông Bạch Đằng: Làn đại hồng thủy cuộn trào cùng Thủy Long thần thoại và hàng cọc gỗ bọc sắt nhô lên từ lòng sông, hất tung và nghiền nát quân địch.', cd: 11, aim: 'line', range: 22, size: 5.5 },
   nguyen_trai: { name: 'Quân Trung Từ Mệnh', desc: 'Phóng ba luồng chữ khí xuyên qua mọi kẻ địch trên đường bay. Trúng đủ 3 lần sẽ rơi vào trạng thái Dao Động, gây ít sát thương hơn 40% trong 6 giây.', cd: 10, aim: 'line', range: 18, size: 2.4 },
   phu_dong: { name: 'Thần Tre Giáng Thế', desc: 'Cây tre khổng lồ từ trên cao giáng xuống điểm chỉ định (tầm 14), gây sát thương diện rộng và làm choáng 1,6 giây.', cd: 12, aim: 'circle', range: 14, size: 5 },
   ly_thuong_kiet: { name: 'Xây Thành Thăng Long', desc: 'Dựng thành lũy tại điểm chỉ định (tầm 12) trong 5 giây. Đồng minh bên trong hồi máu theo thời gian, nhận ít hơn 40% sát thương, và kẻ địch đánh vào sẽ bị phản lại một phần sát thương.', cd: 16, aim: 'circle', range: 12, size: 4.5 },
+};
+
+/** Kỹ năng chiêu cuối (phím Q) có tầm định hướng cần vòng/dải chỉ thị kiểu MOBA. */
+export const Q_SKILLS: Record<string, ESkill> = {
+  con_son_stream: { name: 'Suối Côn Sơn Bào Mòn', desc: 'Dòng suối ngọc Côn Sơn cuộn sóng đẩy lùi và làm chậm địch', cd: 24, aim: 'line', range: 22, size: 6.5 },
+  swamp: { name: 'Trận Đồ Bộc Phá', desc: 'Vùng đầm lầy cọc nhọn Bạch Đằng làm chậm và gây sát thương', cd: 24, aim: 'circle', range: 20, size: 7.5 },
+  army: { name: 'Thiên Quân Vạn Mã', desc: 'Đạo quân hồn ma ba lần kháng Nguyên quét sạch hàng ngũ địch', cd: 22, aim: 'line', range: 46, size: 7 },
 };
 
 /** Cấp +5: vũ khí tiến hóa, đổi sang ánh vàng và có thêm sức mạnh riêng. */

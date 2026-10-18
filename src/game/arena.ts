@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { settings, saveSettings } from '../infrastructure/persistence/settings-repository';
 import { showTouch, touch } from '../ui/input/touch-controls';
-import { ESKILLS, GENERALS, MAX_WEAPON_LEVEL, MONSTERS, TRUNG_NHI_LOOK, comboFor, waveComposition, type MonsterType } from '../domain/data';
+import { ESKILLS, Q_SKILLS, GENERALS, MAX_WEAPON_LEVEL, MONSTERS, TRUNG_NHI_LOOK, comboFor, waveComposition, type MonsterType } from '../domain/data';
 import { CARDS, cardById, pickOffer, xpNeed } from '../domain/combat/cards';
 import { checkAchievements, ensureQuests, questAdd } from '../domain/progression/quests';
 import { ambience } from '../infrastructure/audio/ambience-engine';
@@ -14,6 +14,9 @@ import { loadoutOf, writeSave, type Save3D } from '../infrastructure/persistence
 import { sfx, resumeAudio, type SfxName } from '../infrastructure/audio/sfx-engine';
 import { computeStats, type StatSource } from '../domain/combat/stats';
 import { animateSwamp, buildSwamp } from '../rendering/shaders/swamp';
+import { createWaterShaderMaterial } from '../rendering/shaders/water-shader';
+import { createDissolveMaterial } from '../rendering/shaders/dissolve-shader';
+import { getSoftGlowTex, getShockwaveRingTex, getSmokePuffTex, getSpiritPetalTex } from '../rendering/fx/vfx-textures';
 import { AimIndicator, makeESkillFx } from '../rendering/fx/eskill-fx';
 import { BIOMES, biomeIndexForWave } from '../rendering/biomes/biomes';
 import { ARENA_R, buildArenaWorld, type ArenaWorld } from '../rendering/world/arena-world';
@@ -81,6 +84,110 @@ const EMOTES = ['Theo tôi!', 'Cần hồi máu!', 'Cẩn thận!', 'Được!']
 const AFFIX_NAMES = ['', 'Nhanh', 'Nổ', 'Hồi Máu', 'Giáp Dày'];
 const AFFIX_COLORS = [0, 0x40e0ff, 0xff8a20, 0x60ff80, 0xc8c8e0];
 
+const CONTROL_CODES = new Set([
+  'KeyW', 'KeyA', 'KeyS', 'KeyD',
+  'KeyQ', 'KeyE', 'KeyM', 'KeyB',
+  'Space', 'ShiftLeft', 'ShiftRight',
+  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+  'Digit1', 'Digit2', 'Digit3',
+  'KeyZ', 'KeyX', 'KeyC', 'KeyV',
+  'Escape',
+  'Backspace',
+]);
+
+/**
+ * Xử lý chuẩn hóa mã phím khi người chơi bật Unikey / EVKey / bộ gõ tiếng Việt.
+ * Ngăn chặn triệt để lỗi nuốt phím (A+S tạo 'á'), kẹt phím (di chuyển không dừng), và xung đột ký tự có dấu.
+ */
+function normalizeKeyCode(e: KeyboardEvent): string {
+  // 1. Ưu tiên hàng đầu: e.code phần cứng bàn phím nếu hợp lệ và không phải Process/Unidentified
+  if (e.code && e.code !== 'Process' && e.code !== 'Unidentified') {
+    return e.code;
+  }
+
+  // 2. Dự phòng theo keyCode vật lý chuẩn trên bàn phím
+  const kc = e.keyCode || e.which;
+  if (kc === 87) return 'KeyW';
+  if (kc === 65) return 'KeyA';
+  if (kc === 83) return 'KeyS';
+  if (kc === 68) return 'KeyD';
+  if (kc === 81) return 'KeyQ';
+  if (kc === 69) return 'KeyE';
+  if (kc === 66) return 'KeyB';
+  if (kc === 32) return 'Space';
+  if (kc === 16) return 'ShiftLeft';
+  if (kc === 27) return 'Escape';
+  if (kc === 77) return 'KeyM';
+  if (kc === 38) return 'ArrowUp';
+  if (kc === 40) return 'ArrowDown';
+  if (kc === 37) return 'ArrowLeft';
+  if (kc === 39) return 'ArrowRight';
+  if (kc === 49) return 'Digit1';
+  if (kc === 50) return 'Digit2';
+  if (kc === 51) return 'Digit3';
+
+  // 3. Xử lý chính xác khi Unikey / EVKey can thiệp tạo ký tự Telex/VNI:
+  const k = (e.key || '').toLowerCase();
+
+  // Phím W: gõ w sinh ra 'w', hoặc móc Telex 'ư', 'ă', 'ơ' và các biến thể dấu
+  if (
+    k === 'w' ||
+    k === 'ư' || k === 'ă' || k === 'ơ' ||
+    k === 'ứ' || k === 'ừ' || k === 'ử' || k === 'ữ' || k === 'ự' ||
+    k === 'ắ' || k === 'ằ' || k === 'ẳ' || k === 'ẵ' || k === 'ặ' ||
+    k === 'ớ' || k === 'ờ' || k === 'ở' || k === 'ỡ' || k === 'ợ'
+  ) {
+    return 'KeyW';
+  }
+
+  // Phím S: trong Telex gõ 's' sau nguyên âm tạo dấu sắc (á, é, í, ó, ú, ý, ắ, ấ, ế, ố, ớ, ứ)
+  if (
+    k === 's' ||
+    k === 'á' || k === 'é' || k === 'í' || k === 'ó' || k === 'ú' || k === 'ý' ||
+    k === 'ắ' || k === 'ấ' || k === 'ế' || k === 'ố' || k === 'ớ' || k === 'ứ'
+  ) {
+    return 'KeyS';
+  }
+
+  // Phím A: 'a', hoặc 'â' (do gõ aa trong Telex), hoặc các biến thể dấu của a
+  if (
+    k === 'a' || k === 'â' ||
+    k === 'à' || k === 'ả' || k === 'ã' || k === 'ạ' ||
+    k === 'ầ' || k === 'ẩ' || k === 'ẫ' || k === 'ậ' || k === 'ấ'
+  ) {
+    return 'KeyA';
+  }
+
+  // Phím D: 'd', hoặc 'đ' (do gõ dd trong Telex)
+  if (k === 'd' || k === 'đ') return 'KeyD';
+
+  // Phím E: 'e', hoặc 'ê' (do gõ ee trong Telex), hoặc các biến thể dấu của e
+  if (
+    k === 'e' || k === 'ê' ||
+    k === 'è' || k === 'ẻ' || k === 'ẽ' || k === 'ẹ' ||
+    k === 'ề' || k === 'ể' || k === 'ễ' || k === 'ệ' || k === 'ế'
+  ) {
+    return 'KeyE';
+  }
+
+  if (k === 'b') return 'KeyB';
+  if (k === 'q') return 'KeyQ';
+  if (k === 'm') return 'KeyM';
+  if (k === '1') return 'Digit1';
+  if (k === '2') return 'Digit2';
+  if (k === '3') return 'Digit3';
+  if (k === 'z') return 'KeyZ';
+  if (k === 'x') return 'KeyX';
+  if (k === 'c') return 'KeyC';
+  if (k === 'v') return 'KeyV';
+  if (k === ' ' || k === 'spacebar') return 'Space';
+  if (k === 'shift') return 'ShiftLeft';
+  if (k === 'escape') return 'Escape';
+  if (k === 'backspace') return 'Backspace';
+
+  return e.code || '';
+}
+
 export class Arena {
   scene = new THREE.Scene();
   private cam = new ArenaCamera();
@@ -137,6 +244,21 @@ export class Arena {
   private summons: Summon[] = [];
   private summonViews = new Map<number, SummonView>();
   private armies: { start: THREE.Vector3; dir: THREE.Vector3; travelled: number; len: number; width: number; speed: number; owner: Actor; hit: Set<Mon> }[] = [];
+  private conSonStreams: {
+    start: THREE.Vector3;
+    dir: THREE.Vector3;
+    len: number;
+    width: number;
+    t: number;
+    dur: number;
+    tick: number;
+    owner: Actor;
+    group: THREE.Group;
+    waterSurface: THREE.Mesh;
+    foamLeft: THREE.Mesh;
+    foamRight: THREE.Mesh;
+    petals: { m: THREE.Mesh; offAlong: number; offSide: number; speed: number; rotSpd: number }[];
+  }[] = [];
   private dropSystem = new DropSystem(this.scene);
   get coins(): Coin[] {
     return this.dropSystem.coins;
@@ -172,6 +294,12 @@ export class Arena {
   private eMouseWas = false;
   private eCharging = 0;
   private eSuppress = false;
+  /** Kỹ năng Q định hướng: đang hiện vòng nhắm và chặn đòn đánh thường sau khi xác nhận. */
+  private qAiming = false;
+  private qAimTouch = false;
+  private qWasDown = false;
+  private qMouseWas = false;
+  private qSuppress = false;
   private aimInd: AimIndicator | null = null;
   /** Thành lũy Lý Thường Kiệt đang dựng, và số lần Nguyễn Trãi đã trúng mỗi quái (chủ phòng). */
   private forts: { pos: THREE.Vector3; r: number; until: number; tick: number; owner: Actor }[] = [];
@@ -180,7 +308,7 @@ export class Arena {
   private plane = new THREE.Plane(UP, 0);
 
   private coinTemplate = buildCoin();
-  private partGeo = new THREE.BoxGeometry(0.14, 0.14, 0.14);
+  private partGeo = new THREE.PlaneGeometry(0.3, 0.3);
   private partMats = new Map<number, THREE.MeshBasicMaterial>();
   private barGeo = new THREE.PlaneGeometry(1.4, 0.14);
   private barBg = new THREE.MeshBasicMaterial({ color: 0x120c08, depthTest: false, transparent: true });
@@ -269,6 +397,8 @@ export class Arena {
     this.offerOpen = false;
     this.hud.showCards(null, () => {});
     if (this.aimMarker) this.aimMarker.visible = false;
+    this.cancelEAim();
+    this.cancelQAim();
     this.detach();
     this.flushSave();
     this.clearAll();
@@ -280,6 +410,7 @@ export class Arena {
     if (this.online) return; // trận nhiều người không thể tạm dừng
     this.paused = p;
     this.cancelEAim();
+    this.cancelQAim();
     if (p) this.keys.clear();
     this.mouseDown = false;
     this.hud.setPaused?.(p);
@@ -310,6 +441,7 @@ export class Arena {
   private clearAll(): void {
     this.forts = [];
     this.cancelEAim();
+    this.cancelQAim();
     for (const a of this.actors.values()) this.scene.remove(a.root, a.shadow);
     this.actors.clear();
     for (const s of this.summons) this.scene.remove(s.root, s.shadow);
@@ -325,6 +457,8 @@ export class Arena {
     for (const v of [...this.projViews.values(), ...this.coinViews.values(), ...this.cloudViews.values()]) this.scene.remove(v.obj);
     for (const v of this.zoneViews.values()) this.scene.remove(v.fill!, v.ring!);
     for (const f of this.fxs) f.end();
+    for (const s of this.conSonStreams) this.scene.remove(s.group);
+    this.conSonStreams = [];
     this.mons = [];
     this.projs = [];
     this.zones = [];
@@ -345,37 +479,98 @@ export class Arena {
 
   private onKeyDown = (e: KeyboardEvent): void => {
     if (typing()) return;
-    if (e.code === 'Escape') {
+    const code = normalizeKeyCode(e);
+    if (!code) return;
+
+    // Chặn mặc định các phím điều khiển khi đang trong trận để Unikey không can thiệp/bỏ dấu
+    if (CONTROL_CODES.has(code) || code === 'Backspace') {
+      e.preventDefault();
+    }
+    if (code === 'Backspace') return;
+
+    if (code === 'Escape') {
       if (e.repeat) return;
+      if (this.hud.isLevelupPopoverOpen?.()) {
+        this.hud.toggleLevelupPopover?.();
+        return;
+      }
       if (!this.over) this.onPause();
       return;
     }
     if (this.paused) return;
-    if (e.code === 'KeyM' && !e.repeat && this.active) {
+    if (code === 'KeyB' && !e.repeat && this.active && !this.over) {
+      this.hud.toggleLevelupPopover?.();
+      return;
+    }
+    if (code === 'KeyM' && !e.repeat && this.active) {
       this.hud.banner(ambience.toggleMute() ? 'Đã tắt âm nền' : 'Đã bật âm nền', 'Nhấn M để đổi');
       return;
     }
-    if (this.online && !e.repeat && EMOTE_KEYS.includes(e.code)) {
-      this.emote(EMOTE_KEYS.indexOf(e.code));
+    if (this.online && !e.repeat && EMOTE_KEYS.includes(code)) {
+      this.emote(EMOTE_KEYS.indexOf(code));
       return;
     }
-    if (this.offerOpen && /^Digit[1-3]$/.test(e.code)) {
-      this.pickCard(Number(e.code.slice(5)) - 1);
-      return;
+    if (this.offerOpen && /^Digit[1-3]$/.test(code)) {
+      if (!this.hud.isLevelupPopoverOpen || this.hud.isLevelupPopoverOpen()) {
+        this.pickCard(Number(code.slice(5)) - 1);
+        return;
+      }
     }
-    if (e.code === 'Space') e.preventDefault();
-    this.keys.add(e.code);
+    if (CONTROL_CODES.has(code)) {
+      this.keys.add(code);
+    }
   };
+
   private onKeyUp = (e: KeyboardEvent): void => {
-    this.keys.delete(e.code);
+    if (typing()) return;
+    const code = normalizeKeyCode(e);
+    if (CONTROL_CODES.has(code)) {
+      e.preventDefault();
+    }
+    if (code) this.keys.delete(code);
+    if (e.code && e.code !== 'Process' && e.code !== 'Unidentified') {
+      this.keys.delete(e.code);
+    }
   };
+
+  private onBlur = (): void => {
+    this.keys.clear();
+    this.mouseDown = false;
+  };
+
+  private onVisibilityChange = (): void => {
+    if (document.hidden) {
+      this.keys.clear();
+      this.mouseDown = false;
+    }
+  };
+
+  private onComposition = (e: CompositionEvent): void => {
+    if (!typing()) {
+      e.preventDefault();
+    }
+  };
+
+  private onBeforeInput = (e: InputEvent): void => {
+    if (!typing()) {
+      e.preventDefault();
+    }
+  };
+
   private onMouseMove = (e: MouseEvent): void => {
     const r = this.canvas.getBoundingClientRect();
     this.mouse.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   };
   private onMouseDown = (e: MouseEvent): void => {
     if (e.button === 0) this.mouseDown = true;
+    else if (e.button === 2) {
+      if (this.eAiming) this.cancelEAim();
+      if (this.qAiming) this.cancelQAim();
+    }
     resumeAudio();
+  };
+  private onContextMenu = (e: MouseEvent): void => {
+    e.preventDefault();
   };
   private onWheel = (e: WheelEvent): void => {
     e.preventDefault();
@@ -390,8 +585,15 @@ export class Arena {
     this.detach();
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
+    window.addEventListener('blur', this.onBlur);
+    document.addEventListener('visibilitychange', this.onVisibilityChange);
+    window.addEventListener('compositionstart', this.onComposition);
+    window.addEventListener('compositionupdate', this.onComposition);
+    window.addEventListener('compositionend', this.onComposition);
+    window.addEventListener('beforeinput', this.onBeforeInput as EventListener);
     window.addEventListener('mousemove', this.onMouseMove);
     this.canvas.addEventListener('mousedown', this.onMouseDown);
+    this.canvas.addEventListener('contextmenu', this.onContextMenu);
     this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
     window.addEventListener('mouseup', this.onMouseUp);
   }
@@ -399,8 +601,15 @@ export class Arena {
   private detach(): void {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
+    window.removeEventListener('blur', this.onBlur);
+    document.removeEventListener('visibilitychange', this.onVisibilityChange);
+    window.removeEventListener('compositionstart', this.onComposition);
+    window.removeEventListener('compositionupdate', this.onComposition);
+    window.removeEventListener('compositionend', this.onComposition);
+    window.removeEventListener('beforeinput', this.onBeforeInput as EventListener);
     window.removeEventListener('mousemove', this.onMouseMove);
     this.canvas.removeEventListener('mousedown', this.onMouseDown);
+    this.canvas.removeEventListener('contextmenu', this.onContextMenu);
     this.canvas.removeEventListener('wheel', this.onWheel);
     window.removeEventListener('mouseup', this.onMouseUp);
     this.keys.clear();
@@ -548,6 +757,13 @@ export class Arena {
       const hit = this.mons.find((m) => !m.dead && m.pos.distanceTo(from) < 2.5);
       if (hit) this.damageMon(hit, amount * 0.5, a.pos, 3, this.forts[0]?.owner ?? a, false);
     }
+    if ((a.stats.thorns ?? 0) > 0 && from) {
+      const hit = this.mons.find((m) => !m.dead && m.pos.distanceTo(from) < 3.5);
+      if (hit) {
+        this.damageMon(hit, Math.max(6, Math.round(dmg * a.stats.thorns)), a.pos, 2, a, false);
+        this.popAt(a.pos, 'Phản sát', 'crit', 2.0);
+      }
+    }
     if (a.shield > 0 && this.time < a.shieldUntil) {
       const soak = Math.min(a.shield, dmg);
       a.shield -= soak;
@@ -608,7 +824,7 @@ export class Arena {
     if (d.lengthSq() === 0) d = this.dirOf(a);
     a.dashDir.copy(d).normalize();
     a.dashT = 0.2;
-    a.dashReady = this.time + 2.2;
+    a.dashReady = this.time + 2.2 * (a.stats.dashCdMul ?? 1);
     a.invulnUntil = Math.max(a.invulnUntil, this.time + 0.35);
     a.dashSeq++;
     sfx.dash();
@@ -620,7 +836,14 @@ export class Arena {
     if (this.time < a.ultReady || !a.alive) return;
     const g = a.stats.general;
     a.ultReady = this.time + g.ultCd * a.stats.ultCdMul;
-    this.bannerAll(g.ult, g.ultKind === 'poem' ? 'Nam quốc sơn hà Nam đế cư, tiệt nhiên định phận tại thiên thư' : a.name);
+    this.bannerAll(
+      g.ult,
+      g.ultKind === 'con_son_stream'
+        ? 'Côn Sơn suối chảy rì rầm, ta nghe như tiếng đàn cầm bên tai'
+        : g.ultKind === 'poem'
+          ? 'Nam quốc sơn hà Nam đế cư, tiệt nhiên định phận tại thiên thư'
+          : a.name,
+    );
     this.playSfx('boom');
     if (a.local) this.localUltStart(a);
     switch (g.ultKind) {
@@ -633,6 +856,7 @@ export class Arena {
       case 'poem': this.ultPoem(a); break;
       case 'proclaim': this.ultProclaim(a); break;
       case 'bamboo': this.ultBamboo(a); break;
+      case 'con_son_stream': this.ultConSonStream(a); break;
     }
   }
 
@@ -1086,47 +1310,211 @@ export class Arena {
     return c;
   }
 
-  /** Vòng chỉ định chiêu Q của Ngô Quyền: vòng tầm xa quanh người và vùng đầm lầy theo chuột. Chỉ hiện ở máy người chơi. */
+  /** Vòng chỉ định chiêu: chỉ hiển thị khi người chơi chủ động bật ngắm kỹ năng, không tự hiện vĩnh viễn trên sàn. */
   private updateAimMarker(): void {
-    const show = this.active && !this.paused && !this.over && !!this.me && this.me.alive && this.me.stats.general.ultKind === 'swamp';
-    if (!show) {
-      if (this.aimMarker) this.aimMarker.visible = false;
-      return;
+    if (this.aimMarker) this.aimMarker.visible = false;
+  }
+
+  /**
+   * Nguyễn Trãi: Suối Côn Sơn Bào Mòn.
+   * Nguyễn Trãi vung quạt trúc niệm thơ, từ chân tuôn trào dòng suối ngọc xanh biếc cuộn sóng,
+   * bọt nước trắng và sương mờ dài 22m rộng 6.5m tồn tại 4.5 giây:
+   * liên tục gây sát thương, làm chậm 60% và ĐẨY LÙI MẠNH MẼ quái vật dọc theo dòng nước.
+   */
+  private ultConSonStream(a: Actor): void {
+    const dir = this.aimDir(a);
+    const len = 22;
+    const width = 6.5;
+    const dur = 4.5;
+    const start = a.pos.clone().setY(0);
+
+    const group = new THREE.Group();
+    group.position.set(start.x, 0, start.z);
+    group.rotation.y = Math.atan2(-dir.z, dir.x);
+
+    // 1. Lòng suối ngọc Côn Sơn
+    const riverbed = new THREE.Mesh(
+      new THREE.PlaneGeometry(len, width + 0.4),
+      new THREE.MeshBasicMaterial({ color: 0x064e3b, side: THREE.DoubleSide }),
+    );
+    riverbed.rotation.x = -Math.PI / 2;
+    riverbed.position.set(len / 2, 0.08, 0);
+
+    // 2. Mặt nước ngọc bích phát sáng đa tầng với Shader động
+    const waterMat = createWaterShaderMaterial({
+      colorDeep: 0x064e3b,
+      colorShallow: 0x2dd4bf,
+      foamColor: 0xf0fdfa,
+      speed: 3.2,
+      waveFrequency: 6.0,
+      waveHeight: 0.08,
+      opacity: 0.85,
+    });
+    const waterSurface = new THREE.Mesh(
+      new THREE.PlaneGeometry(len, width, 40, 20),
+      waterMat,
+    );
+    waterSurface.rotation.x = -Math.PI / 2;
+    waterSurface.position.set(len / 2, 0.12, 0);
+
+    const waterCurrent = new THREE.Mesh(
+      new THREE.PlaneGeometry(len, width * 0.75),
+      new THREE.MeshBasicMaterial({ color: 0x5eead4, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }),
+    );
+    waterCurrent.rotation.x = -Math.PI / 2;
+    waterCurrent.position.set(len / 2, 0.14, 0);
+
+    // 3. Hai dải bọt sóng trắng cuộn dọc hai bên bờ suối
+    const foamLeft = new THREE.Mesh(
+      new THREE.PlaneGeometry(len, 0.65),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false }),
+    );
+    foamLeft.rotation.x = -Math.PI / 2;
+    foamLeft.position.set(len / 2, 0.15, -width / 2 + 0.3);
+
+    const foamRight = new THREE.Mesh(
+      new THREE.PlaneGeometry(len, 0.65),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false }),
+    );
+    foamRight.rotation.x = -Math.PI / 2;
+    foamRight.position.set(len / 2, 0.15, width / 2 - 0.3);
+
+    group.add(riverbed, waterSurface, waterCurrent, foamLeft, foamRight);
+
+    // 4. Màn sương Côn Sơn huyền ảo bốc lên từ mặt suối (dùng soft smoke sprite thay vì quả cầu)
+    const mistMat = new THREE.MeshBasicMaterial({
+      map: getSmokePuffTex(),
+      color: 0xccfbf1,
+      transparent: true,
+      opacity: 0.35,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    });
+    for (let sm = 0; sm < 14; sm++) {
+      const mistMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.4 + Math.random() * 0.8, 2.4 + Math.random() * 0.8), mistMat);
+      mistMesh.rotation.x = -Math.PI / 2;
+      mistMesh.position.set(2 + sm * 1.5, 0.4 + Math.random() * 0.4, (Math.random() - 0.5) * (width - 1.5));
+      group.add(mistMesh);
     }
-    if (!this.aimMarker) {
-      const g = new THREE.Group();
-      const mk = (geo: THREE.BufferGeometry, name: string): THREE.Mesh => {
-        const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x4aa8e8, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide }));
-        m.name = name;
-        m.rotation.x = -Math.PI / 2;
-        m.renderOrder = 5;
-        g.add(m);
-        return m;
-      };
-      mk(new THREE.RingGeometry(SWAMP_RANGE - 0.12, SWAMP_RANGE, 72), 'range');
-      mk(new THREE.CircleGeometry(7.5, 40), 'fill');
-      mk(new THREE.RingGeometry(7.3, 7.6, 48), 'edge');
-      mk(new THREE.RingGeometry(0.15, 0.55, 20), 'dot');
-      this.scene.add(g);
-      this.aimMarker = g;
+
+    // 5. Cánh hoa sen hồng và lá trúc xanh trôi dạt cuồn cuộn theo dòng nước
+    const petalTex = getSpiritPetalTex();
+    const lotusMat = new THREE.MeshBasicMaterial({ map: petalTex, color: 0xf472b6, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false });
+    const leafMat = new THREE.MeshBasicMaterial({ map: petalTex, color: 0x34d399, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false });
+    const petals: { m: THREE.Mesh; offAlong: number; offSide: number; speed: number; rotSpd: number }[] = [];
+    for (let p = 0; p < 24; p++) {
+      const isLotus = p % 2 === 0;
+      const petMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.35), isLotus ? lotusMat : leafMat);
+      petMesh.rotation.x = -Math.PI / 2;
+
+      const offAlong = Math.random() * len;
+      const offSide = (Math.random() - 0.5) * (width - 1.2);
+      petMesh.position.set(offAlong, 0.18, offSide);
+      group.add(petMesh);
+
+      petals.push({
+        m: petMesh,
+        offAlong,
+        offSide,
+        speed: 13 + Math.random() * 5,
+        rotSpd: (Math.random() - 0.5) * 5,
+      });
     }
-    const g = this.aimMarker;
-    g.visible = true;
-    const ready = this.time >= this.me.ultReady;
-    const col = ready ? 0x4aa8e8 : 0x8a8a92;
-    const c = this.swampCenter(this.me);
-    const pulse = 0.5 + Math.sin(this.time * 6) * 0.5;
-    for (const m of g.children) {
-      const mat = (m as THREE.Mesh).material as THREE.MeshBasicMaterial;
-      mat.color.setHex(col);
-      if (m.name === 'range') {
-        m.position.set(this.me.pos.x, 0.11, this.me.pos.z);
-        mat.opacity = ready ? 0.35 : 0.15;
+
+    this.scene.add(group);
+    this.addShake(0.5);
+    this.ring(start, 5.0, 0x2dd4bf, 0.8);
+    this.burst(start.clone().setY(1.0), 0x2dd4bf, 36, 10, 1.2);
+
+    this.conSonStreams.push({
+      start,
+      dir,
+      len,
+      width,
+      t: dur,
+      dur,
+      tick: 0,
+      owner: a,
+      group,
+      waterSurface,
+      foamLeft,
+      foamRight,
+      petals,
+    });
+  }
+
+  private updateConSonStreams(dt: number): void {
+    for (const s of this.conSonStreams) {
+      s.t -= dt;
+      s.tick -= dt;
+      const fade = Math.min(1, s.t / 0.5);
+
+      // Hoạt ảnh mặt nước và bọt sóng
+      const pulse = 1 + Math.sin(this.time * 12) * 0.12;
+      s.foamLeft.scale.set(1, pulse, 1);
+      s.foamRight.scale.set(1, pulse, 1);
+      if (s.waterSurface.material instanceof THREE.ShaderMaterial) {
+        s.waterSurface.material.uniforms.uTime.value = this.time;
+        s.waterSurface.material.uniforms.uOpacity.value = 0.85 * fade;
       } else {
-        m.position.set(c.x, m.name === 'fill' ? 0.1 : 0.12, c.z);
-        mat.opacity = m.name === 'fill' ? (ready ? 0.14 + pulse * 0.08 : 0.07) : ready ? 0.7 : 0.25;
+        (s.waterSurface.material as THREE.MeshBasicMaterial).opacity = 0.65 * fade;
+      }
+      (s.foamLeft.material as THREE.MeshBasicMaterial).opacity = 0.85 * fade;
+      (s.foamRight.material as THREE.MeshBasicMaterial).opacity = 0.85 * fade;
+
+      // Cánh hoa và lá trúc cuốn trôi theo dòng nước
+      for (const p of s.petals) {
+        p.offAlong = (p.offAlong + p.speed * dt) % s.len;
+        const wobble = Math.sin(this.time * 6 + p.offAlong) * 0.35;
+        p.m.position.set(p.offAlong, 0.18 + Math.sin(this.time * 8 + p.offAlong) * 0.04, p.offSide + wobble);
+        p.m.rotation.y += p.rotSpd * dt;
+        (p.m.material as THREE.MeshBasicMaterial).opacity = fade;
+      }
+
+      // Tác dụng lên quái vật trong dòng suối: Sát thương + Làm chậm + ĐẨY LÙI MẠNH MẼ
+      const doTickDamage = s.tick <= 0;
+      for (const m of this.mons) {
+        if (m.dead) continue;
+        const rx = m.pos.x - s.start.x;
+        const rz = m.pos.z - s.start.z;
+        const along = rx * s.dir.x + rz * s.dir.z;
+        const side = Math.abs(rx * s.dir.z - rz * s.dir.x);
+
+        if (along >= -0.5 && along <= s.len + 0.5 && side <= s.width / 2 + m.def.radius) {
+          // 1. ĐẨY LÙI MẠNH MẼ: Dòng nước cuộn trào quét sạch quái vật về phía sau!
+          const pushStep = 15.0 * dt;
+          m.pos.addScaledVector(s.dir, pushStep);
+          const rr = Math.hypot(m.pos.x, m.pos.z);
+          const lim = ARENA_R - 1.5;
+          if (rr > lim) m.pos.multiplyScalar(lim / rr);
+
+          // 2. Làm chậm 60%
+          this.applySlow(m, 0.35, 0.4);
+
+          // 3. Bào mòn gây sát thương
+          if (doTickDamage) {
+            this.damageMon(m, 38, m.pos, 0.2, s.owner);
+            if (Math.random() < 0.25) this.fxBurst(m.pos.x, 0.5, m.pos.z, 0x5eead4, 2, 3, 0.5);
+          }
+        }
+      }
+
+      if (doTickDamage) s.tick = 0.28;
+
+      if (s.t <= 0) {
+        this.scene.remove(s.group);
+        s.group.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          if (mesh.geometry) mesh.geometry.dispose();
+          if (mesh.material) {
+            if (Array.isArray(mesh.material)) mesh.material.forEach((m) => m.dispose());
+            else mesh.material.dispose();
+          }
+        });
       }
     }
+    this.conSonStreams = this.conSonStreams.filter((s) => s.t > 0);
   }
 
   /** Nguyễn Trãi: Bình Ngô Đại Cáo. Hỗ trợ cả đội, làm quái hoảng sợ. */
@@ -1209,6 +1597,7 @@ export class Arena {
   private moveInput(): THREE.Vector3 {
     const v = new THREE.Vector3();
     if (typing()) return v;
+
     const k = this.keys;
     if (k.has('KeyW') || k.has('ArrowUp')) v.z -= 1;
     if (k.has('KeyS') || k.has('ArrowDown')) v.z += 1;
@@ -1291,10 +1680,15 @@ export class Arena {
     const o = owner ?? this.me;
     let dmg = base * (useStats ? this.dealMultiplier(owner) : 1) * (0.9 + Math.random() * 0.2);
     const crit = useStats && Math.random() < o.stats.crit;
-    if (crit) dmg *= 2;
+    if (crit) dmg *= (o.stats.critDmgMul ?? 2);
     if (m.affix === 4) dmg *= 0.65;
     dmg = Math.max(1, Math.round(dmg));
     m.hp -= dmg;
+    if (o.alive && (o.stats.lifesteal ?? 0) > 0 && Math.random() < 0.45) {
+      const heal = Math.max(1, Math.round(dmg * o.stats.lifesteal));
+      o.hp = Math.min(o.stats.maxHp, o.hp + heal);
+      this.popAt(o.pos, `+${heal}`, 'heal', 2.0);
+    }
     m.flashUntil = this.time + 0.09;
     if (knock > 0) {
       const k = new THREE.Vector3().subVectors(m.pos, from).setY(0);
@@ -1380,11 +1774,48 @@ export class Arena {
 
   private shrinkAway(m: Mon): void {
     const g = m.rig.group;
+    const dissolveMats: THREE.ShaderMaterial[] = [];
+    const edgeCol = m.def.boss ? 0xff0044 : (m.affix ? 0xa855f7 : 0xff5500);
+
+    g.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const meshChild = child as THREE.Mesh;
+        let baseCol = 0x555555;
+        if (meshChild.material) {
+          const mCol = (meshChild.material as any).color;
+          if (mCol && typeof mCol.getHex === 'function') {
+            baseCol = mCol.getHex();
+          }
+        }
+        const dMat = createDissolveMaterial(baseCol, edgeCol);
+        dissolveMats.push(dMat);
+        meshChild.material = dMat;
+      }
+    });
+
     this.fxs.push({
       t: 0,
-      dur: 0.3,
-      update: (k) => g.scale.setScalar(Math.max(0.01, (1 - k) * m.baseScale)),
-      end: () => this.scene.remove(g),
+      dur: 0.65,
+      update: (k) => {
+        for (const mat of dissolveMats) {
+          mat.uniforms.uProgress.value = k * 1.05;
+        }
+        // Tro than hồng phát sáng bay lượn từ xác quái
+        if (Math.random() < 0.65) {
+          const emberPos = m.pos.clone().add(new THREE.Vector3(
+            (Math.random() - 0.5) * 1.2,
+            k * 1.6 + Math.random() * 0.4,
+            (Math.random() - 0.5) * 1.2,
+          ));
+          this.burst(emberPos, edgeCol, 2, 1.8, 0.4);
+        }
+      },
+      end: () => {
+        for (const mat of dissolveMats) {
+          mat.dispose();
+        }
+        this.scene.remove(g);
+      },
     });
   }
 
@@ -1661,7 +2092,15 @@ export class Arena {
   private partMat(color: number): THREE.MeshBasicMaterial {
     let m = this.partMats.get(color);
     if (!m) {
-      m = new THREE.MeshBasicMaterial({ color });
+      m = new THREE.MeshBasicMaterial({
+        color,
+        map: getSoftGlowTex(),
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      });
       this.partMats.set(color, m);
     }
     return m;
@@ -1686,8 +2125,8 @@ export class Arena {
             v.multiplyScalar(0.4);
             v.y = Math.abs(v.y) * 0.3;
           }
-          mesh.rotation.x += dt * 8;
-          mesh.scale.multiplyScalar(1 - dt * 1.2 * k);
+          mesh.quaternion.copy(this.camera.quaternion);
+          mesh.scale.multiplyScalar(Math.max(0.01, 1 - dt * 1.6 * k));
         },
         end: () => this.scene.remove(mesh),
       });
@@ -1725,8 +2164,17 @@ export class Arena {
   }
 
   private fxRing(x: number, z: number, radius: number, color: number, dur: number): void {
-    const m = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
-    const mesh = new THREE.Mesh(new THREE.RingGeometry(0.82, 1, 40), m);
+    const m = new THREE.MeshBasicMaterial({
+      color,
+      map: getShockwaveRingTex(),
+      transparent: true,
+      opacity: 0.92,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const geo = new THREE.PlaneGeometry(2, 2);
+    const mesh = new THREE.Mesh(geo, m);
     mesh.rotation.x = -Math.PI / 2;
     mesh.position.set(x, 0.12, z);
     this.scene.add(mesh);
@@ -1735,11 +2183,11 @@ export class Arena {
       dur,
       update: (k) => {
         mesh.scale.setScalar(Math.max(0.1, radius * (0.2 + 0.8 * Math.sqrt(k))));
-        m.opacity = 0.85 * (1 - k);
+        m.opacity = 0.92 * (1 - k);
       },
       end: () => {
         this.scene.remove(mesh);
-        mesh.geometry.dispose();
+        geo.dispose();
         m.dispose();
       },
     });
@@ -2453,12 +2901,10 @@ export class Arena {
     const dt = Math.min(dtRaw, 0.05);
     this.world.update(this.time, dt, this.camTarget);
     if (!this.active) return;
-    if (this.hitStop > 0 && this.role === 'solo' && !this.paused && !this.over && !this.offerOpen) {
+    if (this.hitStop > 0) {
       this.hitStop -= dtRaw;
-      this.updateCamera(dt);
-      return;
     }
-    if (this.paused || this.over || (this.role === 'solo' && this.offerOpen)) {
+    if (this.paused || this.over) {
       if (this.over) for (const a of this.actors.values()) this.animActor(a, dt);
       this.updateCamera(dt);
       return;
@@ -2542,6 +2988,7 @@ export class Arena {
     this.updateZones(dt);
     this.updateClouds(dt);
     this.updateArmies(dt);
+    this.updateConSonStreams(dt);
     this.updateSummons(dt);
     this.updateCoins(dt);
 
@@ -2585,18 +3032,24 @@ export class Arena {
       a.moving = input.lengthSq() > 0 && a.dashT <= 0;
 
       if (!typing()) {
-        if (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || touch.dash) this.doDash(a);
-        if (this.keys.has('KeyQ') || touch.q) this.pressUlt(a);
+        if (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.keys.has('Space') || touch.dash) this.doDash(a);
+        this.updateQAim(a, dt);
         this.updateEAim(a, dt);
-      } else this.cancelEAim();
-      if (!this.mouseDown) this.eSuppress = false;
-      const holding = !typing() && ((this.mouseDown && !this.eAiming && !this.eSuppress) || this.keys.has('Space') || touch.attack);
+      } else {
+        this.cancelEAim();
+        this.cancelQAim();
+      }
+      if (!this.mouseDown) {
+        this.eSuppress = false;
+        this.qSuppress = false;
+      }
+      const holding = !typing() && ((this.mouseDown && !this.eAiming && !this.qAiming && !this.eSuppress && !this.qSuppress) || touch.attack);
       a.hold = holding;
       if (holding) {
         if (this.role === 'client') this.clientAttack(a);
         else this.tryAttack(a);
       }
-      if (a.attackAnim.t < a.attackAnim.dur || holding) {
+      if (a.attackAnim.t < a.attackAnim.dur || holding || this.eAiming || this.qAiming) {
         const d = this.aimDir(a);
         a.yaw = Math.atan2(d.x, d.z);
       } else if (input.lengthSq() > 0) {
@@ -2606,13 +3059,19 @@ export class Arena {
       a.moving = false;
       a.hold = false;
       this.cancelEAim();
+      this.cancelQAim();
     }
   }
 
   private cancelEAim(): void {
     this.eAiming = false;
     this.eCharging = 0;
-    this.aimInd?.hide();
+    if (!this.qAiming) this.aimInd?.hide();
+  }
+
+  private cancelQAim(): void {
+    this.qAiming = false;
+    if (!this.eAiming) this.aimInd?.hide();
   }
 
   /**
@@ -2642,6 +3101,7 @@ export class Arena {
     };
     if (!this.eAiming) {
       if (rising && this.time >= a.eReady) {
+        this.cancelQAim();
         this.eAiming = true;
         this.eAimTouch = touch.e;
         this.eCharging = 0;
@@ -2663,12 +3123,65 @@ export class Arena {
     } else if (es.charge ? clickUp : clickDown) cast();
   }
 
+  /**
+   * Kỹ năng Q (Chiêu Cuối) định hướng: nếu chiêu cuối có tầm định hướng (như Suối Côn Sơn Bào Mòn của Nguyễn Trãi,
+   * Trận Đồ Bộc Phá của Ngô Quyền, Thiên Quân Vạn Mã của Trần Hưng Đạo), nhấn Q để hiện vòng/dải chỉ thị (MOBA),
+   * rê chuột để chỉnh hướng, nhấn chuột trái để thi triển. Nhấn Q lần nữa hoặc Esc để hủy.
+   * Nếu chiêu cuối là dạng bản thân (cuồng nộ, triệu hồi, hào quang), bấm Q sẽ kích hoạt ngay.
+   */
+  private updateQAim(a: Actor, dt: number): void {
+    const qs = Q_SKILLS[a.stats.general.ultKind];
+    const down = this.keys.has('KeyQ') || touch.q;
+    const rising = down && !this.qWasDown;
+    const falling = !down && this.qWasDown;
+    this.qWasDown = down;
+    const clickDown = this.mouseDown && !this.qMouseWas;
+    this.qMouseWas = this.mouseDown;
+
+    // Chiêu cuối không có vùng định hướng (kích hoạt ngay lập tức)
+    if (!qs) {
+      if (rising) this.pressUlt(a);
+      return;
+    }
+
+    const cast = (): void => {
+      this.cancelQAim();
+      this.qSuppress = true;
+      this.pressUlt(a);
+    };
+
+    if (!this.qAiming) {
+      if (rising && this.time >= a.ultReady) {
+        this.cancelEAim();
+        this.qAiming = true;
+        this.qAimTouch = touch.q;
+        this.qSuppress = true;
+      }
+      if (!this.qAiming) return;
+    } else if (rising && !this.qAimTouch) {
+      this.cancelQAim();
+      return;
+    } else if (this.keys.has('Escape')) {
+      this.cancelQAim();
+      return;
+    }
+
+    if (!this.aimInd) this.aimInd = new AimIndicator(this.scene);
+    this.aimInd.show(qs, a.pos, a.aim, 0);
+
+    if (this.qAimTouch) {
+      if (falling) cast();
+    } else if (clickDown) {
+      cast();
+    }
+  }
+
   private pressE(a: Actor): void {
     const es = ESKILLS[a.stats.general.id];
     if (!es || !a.alive) return;
     if (this.role === 'client') {
       if (this.time < a.eReady) return;
-      a.eReady = this.time + es.cd * a.stats.ultCdMul;
+      a.eReady = this.time + es.cd * a.stats.ultCdMul * (a.stats.eCdMul ?? 1);
       a.eSeq++;
     } else this.doE(a);
   }
@@ -2726,7 +3239,7 @@ export class Arena {
   private doE(a: Actor): void {
     const es = ESKILLS[a.stats.general.id];
     if (!es || !a.alive || this.time < a.eReady) return;
-    a.eReady = this.time + es.cd * a.stats.ultCdMul;
+    a.eReady = this.time + es.cd * a.stats.ultCdMul * (a.stats.eCdMul ?? 1);
     this.popAt(a.pos, es.name, 'crit', 3.6);
     this.playSfx('boom');
     const near = (p: THREE.Vector3, r: number): Mon[] => this.mons.filter((m) => !m.dead && m.pos.distanceTo(p) < r + m.def.radius);
@@ -2735,34 +3248,59 @@ export class Arena {
     switch (a.stats.general.id) {
       case 'tran_hung_dao': {
         this.emitE('tran_hung_dao', from.x, from.z, dir.x, dir.z);
-        this.addShake(0.4);
-        for (const { m, t } of this.inRect(from, dir, es.range, es.size ?? 5)) {
-          this.later(t / 22, () => {
+        this.addShake(0.65);
+        for (const { m, t } of this.inRect(from, dir, es.range, es.size ?? 6.5)) {
+          this.later(t / 24, () => {
             if (m.dead) return;
-            this.damageMon(m, 75, from, 5, a);
+            this.damageMon(m, 90, from, 6, a);
             if (!m.dead) this.applyBurn(m, 3, a);
           });
         }
+        const boomPt = from.clone().addScaledVector(dir, es.range * 0.85);
+        this.later(1.0, () => {
+          this.addShake(0.5);
+          for (const m of near(boomPt, 6.5)) {
+            if (m.dead) continue;
+            this.damageMon(m, 70, boomPt, 8, a);
+            if (!m.dead) this.applyBurn(m, 3, a);
+          }
+        });
         break;
       }
       case 'quang_trung': {
-        const c = this.eTarget(a, es.range);
-        this.emitE('quang_trung', c.x, c.z, from.x, from.z);
-        this.later(0.6, () => {
-          this.burst(c.clone().setY(1), 0xff6a20, 30, 10, 1.2);
-          this.addShake(0.5);
-          for (const m of near(c, es.size ?? 5.5)) {
-            this.damageMon(m, 75, c, 9, a);
+        this.emitE('quang_trung', from.x, from.z, dir.x, dir.z);
+        this.addShake(0.7);
+        for (const { m, t } of this.inRect(from, dir, es.range, es.size ?? 6.0)) {
+          this.later(t / 55, () => {
+            if (m.dead) return;
+            this.damageMon(m, 85, from, 8, a);
+            if (!m.dead) this.applyBurn(m, 3, a);
+          });
+        }
+        const boomPt = from.clone().addScaledVector(dir, es.range);
+        this.later(0.36, () => {
+          this.addShake(0.65);
+          this.burst(boomPt.clone().setY(1.2), 0xff3b00, 36, 12, 1.4);
+          for (const m of near(boomPt, 6.5)) {
+            if (m.dead) return;
+            this.damageMon(m, 75, boomPt, 10, a);
             if (!m.dead) this.applyBurn(m, 3, a);
           }
         });
         break;
       }
       case 'le_loi':
-        a.guardUntil = this.time + 4;
-        a.shield = Math.round(a.stats.maxHp * 0.4);
-        a.shieldUntil = this.time + 4;
+        a.guardUntil = this.time + 6;
+        a.shield = Math.round(a.stats.maxHp * 0.45);
+        a.shieldUntil = this.time + 6;
         this.emitE('le_loi', from.x, from.z, dir.x, dir.z);
+        this.addShake(0.5);
+        this.ring(a.pos, 5.0, 0xffd700, 0.7);
+        for (const m of near(a.pos, 5.0)) {
+          if (m.dead) continue;
+          this.damageMon(m, 60, a.pos, 10, a);
+          if (!m.dead) this.applyStun(m, 0.8);
+        }
         break;
       case 'hai_ba_trung':
         this.emitE('hai_ba_trung', from.x, from.z, dir.x, dir.z);
@@ -2776,9 +3314,9 @@ export class Arena {
       case 'ba_trieu': {
         const ch = Math.max(0, Math.min(1, a.eCharge));
         const len = es.range + (es.charge?.extra ?? 0) * ch;
-        const half = es.half ?? 0.6;
+        const half = es.half ?? 0.65;
         this.emitE('ba_trieu', from.x, from.z, dir.x, dir.z, ch);
-        this.addShake(0.3 + ch * 0.4);
+        this.addShake(0.4 + ch * 0.5);
         const base = Math.atan2(dir.x, dir.z);
         for (const m of near(from, len)) {
           const v = new THREE.Vector3().subVectors(m.pos, from).setY(0);
@@ -2788,23 +3326,23 @@ export class Arena {
             if (ang > Math.PI) ang = Math.PI * 2 - ang;
             if (ang > half) continue;
           }
-          this.later(d / 22, () => {
+          this.later(d / 28, () => {
             if (m.dead) return;
-            this.damageMon(m, 55 + 65 * ch, from, 9 + 9 * ch, a);
+            this.damageMon(m, 65 + 75 * ch, from, 15 + 15 * ch, a);
           });
         }
         break;
       }
       case 'ngo_quyen': {
         this.emitE('ngo_quyen', from.x, from.z, dir.x, dir.z);
-        this.addShake(0.5);
-        for (const { m, t } of this.inRect(from, dir, es.range, es.size ?? 4.5)) {
-          this.later(t / 20, () => {
+        this.addShake(0.6);
+        for (const { m, t } of this.inRect(from, dir, es.range, es.size ?? 5.5)) {
+          this.later(t / 22, () => {
             if (m.dead) return;
-            this.damageMon(m, 80, from, 7, a);
+            this.damageMon(m, 95, from, 8, a);
             if (m.dead) return;
-            this.applyStun(m, 1);
-            m.airUntil = this.time + 0.9;
+            this.applyStun(m, 1.4);
+            m.airUntil = this.time + 1.1;
           });
         }
         break;
@@ -3618,14 +4156,36 @@ export class Arena {
     const a = this.me;
     this.hud.setHp(a.hp, a.stats.maxHp);
     const w = a.stats.weapon;
+    const atkCd = w.cd / a.stats.atkSpeed;
+    const dashCd = 2.2 * (a.stats.dashCdMul ?? 1);
+    const ultCd = a.stats.general.ultCd * a.stats.ultCdMul;
+    const eCd = (ESKILLS[a.stats.general.id]?.cd ?? 10) * a.stats.ultCdMul * (a.stats.eCdMul ?? 1);
+
+    const remAtk = Math.max(0, a.atkReady - this.time);
+    const remDash = Math.max(0, a.dashReady - this.time);
+    const remUlt = Math.max(0, a.ultReady - this.time);
+    const remE = Math.max(0, a.eReady - this.time);
+
     this.hud.setCooldowns(
-      1 - Math.max(0, a.atkReady - this.time) / (w.cd / a.stats.atkSpeed),
-      1 - Math.max(0, a.dashReady - this.time) / 2.2,
-      1 - Math.max(0, a.ultReady - this.time) / (a.stats.general.ultCd * a.stats.ultCdMul),
-      1 - Math.max(0, a.eReady - this.time) / ((ESKILLS[a.stats.general.id]?.cd ?? 10) * a.stats.ultCdMul),
+      1 - remAtk / atkCd,
+      1 - remDash / dashCd,
+      1 - remUlt / ultCd,
+      1 - remE / eCd,
+      remDash,
+      remUlt,
+      remE,
     );
     this.hud.setXp(a.level, this.role === 'client' ? a.xp : a.xp / xpNeed(a.level));
     this.hud.setGold(a.runGold, this.save.gold);
+    this.hud.setStats?.({
+      dmg: Math.round(w.dmg * a.stats.dmgMult),
+      atkSpd: +(a.stats.atkSpeed).toFixed(2),
+      def: Math.round(a.stats.reduce * 100),
+      crit: Math.round(a.stats.crit * 100),
+      spd: Math.round(a.stats.speed * 85),
+      cdr: Math.round((1 - a.stats.ultCdMul) * 100),
+    });
+    this.hud.setPendingLevels?.(a.pendingLevels);
     let boss: Mon | undefined;
     if (this.role === 'client') boss = [...this.monViews.values()].find((m) => m.boss);
     else boss = this.mons.find((m) => m.def.boss && !m.dead);

@@ -70,21 +70,30 @@ export function renderGeneralSvg(g: General): string {
       iconSvg = `<circle cx="24" cy="24" r="7" fill="${trimColor}" />`;
   }
 
-  return `<svg viewBox="0 0 48 48" width="48" height="48" xmlns="http://www.w3.org/2000/svg">
+  return `<svg viewBox="0 0 48 48" style="width:100%;height:100%;display:block;" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <radialGradient id="g-bg-${g.id}" cx="50%" cy="40%" r="60%">
         <stop offset="0%" stop-color="${topColor}" />
         <stop offset="100%" stop-color="#100a06" />
       </radialGradient>
     </defs>
-    <rect width="48" height="48" rx="6" fill="url(#g-bg-${g.id})" />
+    <rect width="48" height="48" fill="url(#g-bg-${g.id})" />
     <circle cx="24" cy="24" r="15" fill="${skin}" opacity="0.25" />
     <path d="M12 44 C12 36 18 32 24 32 C30 32 36 36 36 44 Z" fill="${topColor}" />
     <path d="M14 22 C14 14 20 10 24 10 C28 10 34 14 34 22 C34 23 14 23 14 22 Z" fill="${hatColor}" />
     <path d="M13 22 L35 22" stroke="${trimColor}" stroke-width="2" />
     ${iconSvg}
-    <rect x="1" y="1" width="46" height="46" rx="5" fill="none" stroke="${trimColor}" stroke-width="1.5" opacity="0.6" />
+    <rect x="1" y="1" width="46" height="46" fill="none" stroke="${trimColor}" stroke-width="1.5" opacity="0.6" />
   </svg>`;
+}
+
+export function renderGeneralAvatar(g: General): string {
+  const fallbackSvg = renderGeneralSvg(g);
+  return `<div class="general-avatar-wrap">` +
+    `<img src="/avatars/${g.id}.jpeg" alt="${g.name}" class="general-avatar-img general-avatar-${g.id}" ` +
+    `onerror="if(!this.dataset.retry){this.dataset.retry='1';this.src='/avatars/${g.id}.png';}else if(this.dataset.retry==='1'){this.dataset.retry='2';this.src='/avatars/${g.id}.jpg';}else if(this.dataset.retry==='2'){this.dataset.retry='3';this.src='/avatars/${g.id}.webp';}else{this.style.display='none';var f=this.nextElementSibling;if(f)f.style.display='block';}" />` +
+    `<div class="avatar-fallback" style="display:none;width:100%;height:100%;">${fallbackSvg}</div>` +
+    `</div>`;
 }
 
 /* ---------- HUD ---------- */
@@ -155,6 +164,17 @@ export function createHud(): HudApi {
     }
   };
 
+  // Nút mở/đóng chọn nâng cấp bên trái màn hình
+  const sideBtn = $('side-levelup-btn');
+  const sidePopover = $('side-levelup-popover');
+  if (sideBtn && sidePopover) {
+    sideBtn.onclick = (e) => {
+      e.stopPropagation();
+      if (!currentOffer) return;
+      sidePopover.classList.toggle('hidden');
+    };
+  }
+
   return {
     show(name) {
       $('hud-name').textContent = name;
@@ -169,10 +189,19 @@ export function createHud(): HudApi {
         box.classList.add('hidden');
         box.classList.remove('paused-hidden');
       }
+      const sideWrap = $('side-levelup-wrap');
+      if (sideWrap) sideWrap.classList.add('hidden');
+      if (sidePopover) sidePopover.classList.add('hidden');
     },
     setHp(hp, max) {
-      hpFill.style.width = `${Math.max(0, (hp / max) * 100)}%`;
-      hpText.textContent = `${Math.ceil(hp)} / ${max}`;
+      const pct = `${Math.max(0, (hp / max) * 100)}%`;
+      const txt = `${Math.ceil(hp)} / ${max}`;
+      if (hpFill) hpFill.style.width = pct;
+      if (hpText) hpText.textContent = txt;
+      const lolHpFill = $('lol-hp-fill');
+      const lolHpText = $('lol-hp-text');
+      if (lolHpFill) lolHpFill.style.width = pct;
+      if (lolHpText) lolHpText.textContent = txt;
     },
     setWave(t) {
       $('hud-wave').textContent = t;
@@ -184,7 +213,7 @@ export function createHud(): HudApi {
     setKills(n) {
       $('hud-kills').textContent = `Hạ ${n} quái`;
     },
-    setCooldowns(atk, dash, ult, e) {
+    setCooldowns(atk, dash, ult, e, remDash, remUlt, remE) {
       if (prevAtk >= 0.75 && atk < 0.25) triggerCast('atk', currentWeapon || 'Tấn công');
       if (prevDash >= 0.75 && dash < 0.25) triggerCast('dash', 'Lướt');
       if (prevUlt >= 0.75 && ult < 0.25) triggerCast('ult', currentUlt || 'Chiêu cuối');
@@ -199,14 +228,31 @@ export function createHud(): HudApi {
       setCd('cd-dash', dash);
       setCd('cd-ult', ult);
       setCd('cd-e', e);
+
+      // Hiển thị số giây hồi chiêu trên các ô kỹ năng
+      const dashSec = $('cd-dash-sec');
+      if (dashSec) {
+        dashSec.textContent = remDash && remDash > 0.05 ? (remDash >= 1 ? `${Math.ceil(remDash)}s` : `${remDash.toFixed(1)}s`) : '';
+      }
+      const eSec = $('cd-e-sec');
+      if (eSec) {
+        eSec.textContent = remE && remE > 0.05 ? (remE >= 1 ? `${Math.ceil(remE)}s` : `${remE.toFixed(1)}s`) : '';
+      }
+      const ultSec = $('cd-ult-sec');
+      if (ultSec) {
+        ultSec.textContent = remUlt && remUlt > 0.05 ? (remUlt >= 1 ? `${Math.ceil(remUlt)}s` : `${remUlt.toFixed(1)}s`) : '';
+      }
     },
     setLoadout(weapon, ult, e) {
       currentWeapon = weapon;
       currentUlt = ult;
       currentE = e;
-      $('cd-atk-name').textContent = weapon;
-      $('cd-ult-name').textContent = ult;
-      $('cd-e-name').textContent = e;
+      const atkEl = $('cd-atk-name');
+      const ultEl = $('cd-ult-name');
+      const eEl = $('cd-e-name');
+      if (atkEl) atkEl.textContent = weapon;
+      if (ultEl) ultEl.textContent = ult;
+      if (eEl) eEl.textContent = e;
     },
     setGeneral(generalId) {
       const g = GENERALS.find((x) => x.id === generalId);
@@ -216,13 +262,113 @@ export function createHud(): HudApi {
       const heroAvatar = $('hero-avatar');
       if (heroName) heroName.textContent = g.name;
       if (heroTitle) heroTitle.textContent = g.title;
-      if (heroAvatar) heroAvatar.innerHTML = renderGeneralSvg(g);
+      if (heroAvatar) heroAvatar.innerHTML = renderGeneralAvatar(g);
+
+      // Avatar tròn phong cách Liên Minh Huyền Thoại
+      const lolImg = $<HTMLImageElement>('lol-avatar-img');
+      const lolFb = $('lol-avatar-fallback');
+      if (lolImg && lolFb) {
+        const exts = ['.jpeg', '.png', '.jpg', '.webp'];
+        let idx = 0;
+        lolImg.onload = () => {
+          lolImg.style.display = 'block';
+          lolFb.style.display = 'none';
+        };
+        lolImg.onerror = () => {
+          idx++;
+          if (idx < exts.length) {
+            lolImg.src = `/avatars/${g.id}${exts[idx]}`;
+          } else {
+            lolImg.style.display = 'none';
+            lolFb.style.display = 'flex';
+            lolFb.innerHTML = renderGeneralSvg(g);
+          }
+        };
+        lolImg.className = `lol-avatar-img general-avatar-${g.id}`;
+        lolImg.style.display = 'block';
+        lolFb.style.display = 'none';
+        lolImg.src = `/avatars/${g.id}${exts[0]}`;
+      }
+
+      // Ảnh các chiêu thức (tự động thử các định dạng .png, .jpeg, .jpg, .webp)
+      const loadSkillSlot = (imgId: string, fbId: string, candidateNames: string[]) => {
+        const img = $<HTMLImageElement>(imgId);
+        const fb = $(fbId);
+        if (!img || !fb) return;
+
+        const exts = ['.png', '.jpeg', '.jpg', '.webp'];
+        const urls: string[] = [];
+        for (const name of candidateNames) {
+          for (const ext of exts) {
+            urls.push(`/skills/${name}${ext}`);
+          }
+        }
+
+        let idx = 0;
+        img.onload = () => {
+          img.style.display = 'block';
+          fb.style.display = 'none';
+        };
+        img.onerror = () => {
+          idx++;
+          if (idx < urls.length) {
+            img.src = urls[idx];
+          } else {
+            img.style.display = 'none';
+            fb.style.display = 'flex';
+          }
+        };
+
+        img.src = urls[0];
+      };
+
+      loadSkillSlot('img-skill-atk', 'fb-skill-atk', [`${g.id}_atk`, 'atk']);
+      loadSkillSlot('img-skill-dash', 'fb-skill-dash', [`${g.id}_dash`, 'dash']);
+      loadSkillSlot('img-skill-e', 'fb-skill-e', [`${g.id}_e`, 'e']);
+      loadSkillSlot('img-skill-ult', 'fb-skill-ult', [`${g.id}_q`, `${g.id}_ult`, 'q', 'ult']);
     },
     setXp(level, ratio) {
-      $('xp-fill').style.width = `${Math.max(0, Math.min(1, ratio)) * 100}%`;
-      $('xp-text').textContent = `Cấp ${level}`;
+      const pct = `${Math.max(0, Math.min(1, ratio)) * 100}%`;
+      const xpF = $('xp-fill');
+      const xpT = $('xp-text');
+      if (xpF) xpF.style.width = pct;
+      if (xpT) xpT.textContent = `Cấp ${level}`;
+
+      const lolXpF = $('lol-xp-fill');
+      const lolXpT = $('lol-xp-text');
+      const lolLvlBadge = $('lol-level-badge');
+      if (lolXpF) lolXpF.style.width = pct;
+      if (lolXpT) lolXpT.textContent = `Cấp ${level}`;
+      if (lolLvlBadge) lolLvlBadge.textContent = String(level);
+
       const badge = $('hero-lvl-badge');
       if (badge) badge.textContent = `Cấp ${level}`;
+    },
+    setStats(s) {
+      const dmg = $('lol-stat-dmg');
+      const atkspd = $('lol-stat-atkspd');
+      const def = $('lol-stat-def');
+      const crit = $('lol-stat-crit');
+      const spd = $('lol-stat-spd');
+      const cdr = $('lol-stat-cdr');
+      if (dmg) dmg.textContent = String(s.dmg);
+      if (atkspd) atkspd.textContent = s.atkSpd.toFixed(2);
+      if (def) def.textContent = `${s.def}%`;
+      if (crit) crit.textContent = `${s.crit}%`;
+      if (spd) spd.textContent = String(s.spd);
+      if (cdr) cdr.textContent = `${s.cdr}%`;
+    },
+    setPendingLevels(count) {
+      const sideWrap = $('side-levelup-wrap');
+      const sideCount = $('side-levelup-count');
+      if (sideWrap && sideCount) {
+        if (count > 0) {
+          sideWrap.classList.remove('hidden');
+          sideCount.textContent = `+${count}`;
+        } else if (!currentOffer) {
+          sideWrap.classList.add('hidden');
+        }
+      }
     },
     setHazards(text) {
       const el = $('hud-hazard');
@@ -231,8 +377,10 @@ export function createHud(): HudApi {
     },
     setCards(text) {
       const el = $('hud-cards');
-      el.textContent = text;
-      el.classList.toggle('hidden', !text);
+      if (el) {
+        el.textContent = text;
+        el.classList.add('hidden');
+      }
 
       const deck = $('hero-deck');
       if (!deck) return;
@@ -252,37 +400,53 @@ export function createHud(): HudApi {
         .join('');
     },
     showCards(items, pick) {
-      const box = $('cards');
+      const sideWrap = $('side-levelup-wrap');
+      const sideCards = $('side-cards-container');
+      const sidePopover = $('side-levelup-popover');
+      const legacyBox = $('cards');
+
       if (!items) {
         currentOffer = null;
-        box.classList.add('hidden');
-        box.classList.remove('paused-hidden');
-        box.innerHTML = '';
+        if (sidePopover) sidePopover.classList.add('hidden');
+        if (legacyBox) {
+          legacyBox.classList.add('hidden');
+          legacyBox.classList.remove('paused-hidden');
+          legacyBox.innerHTML = '';
+        }
         return;
       }
+
       currentOffer = { items, pick };
-      box.innerHTML = `<div class="cards-title">Lên cấp! Chọn một thẻ nâng cấp <small>(phím 1, 2, 3 hoặc bấm chuột)</small></div><div class="cards-row">${items
-        .map((c, i) => `<button class="upcard" data-i="${i}"><kbd>${i + 1}</kbd><b>${escapeHtml(c.name)}</b><span>${escapeHtml(c.desc)}</span><small>${escapeHtml(c.level)}</small></button>`)
-        .join('')}</div>`;
-      box.classList.remove('hidden');
-      if (isPaused) {
-        box.classList.add('paused-hidden');
-      } else {
-        box.classList.remove('paused-hidden');
+
+      // Render sang giao diện widget bên trái màn hình không gây pause game
+      if (sideWrap && sideCards && sidePopover) {
+        sideWrap.classList.remove('hidden');
+        sideCards.innerHTML = items
+          .map(
+            (c, i) => `
+          <button class="side-upcard" data-i="${i}" title="Chọn nâng cấp này">
+            <kbd>${i + 1}</kbd>
+            <b>${escapeHtml(c.name)}</b>
+            <span>${escapeHtml(c.desc)}</span>
+            <small>${escapeHtml(c.level)}</small>
+          </button>
+        `,
+          )
+          .join('');
+
+        sideCards.querySelectorAll<HTMLButtonElement>('.side-upcard').forEach((b) => {
+          b.onclick = (e) => {
+            e.stopPropagation();
+            sidePopover.classList.add('hidden');
+            pick(Number(b.dataset.i));
+          };
+        });
+
+        // Chỉ hiện nút ô vuông bên cạnh trái, không tự ý bung 3 thẻ để tránh che màn hình khi đang giao tranh
       }
-      box.querySelectorAll<HTMLButtonElement>('.upcard').forEach((b) =>
-        b.addEventListener('click', () => {
-          if (!isPaused) pick(Number(b.dataset.i));
-        }),
-      );
     },
     setPaused(p) {
       isPaused = p;
-      const box = $('cards');
-      if (box && currentOffer) {
-        if (p) box.classList.add('paused-hidden');
-        else box.classList.remove('paused-hidden');
-      }
     },
     setBoss(name, ratio) {
       if (!name) {
@@ -349,6 +513,18 @@ export function createHud(): HudApi {
       tags.forEach((el) => el.remove());
       tags.clear();
     },
+    toggleLevelupPopover() {
+      const sideWrap = $('side-levelup-wrap');
+      const sidePopover = $('side-levelup-popover');
+      if (sideWrap && !sideWrap.classList.contains('hidden') && sidePopover && currentOffer) {
+        sidePopover.classList.toggle('hidden');
+      }
+    },
+    isLevelupPopoverOpen() {
+      const sideWrap = $('side-levelup-wrap');
+      const sidePopover = $('side-levelup-popover');
+      return !!(sideWrap && !sideWrap.classList.contains('hidden') && sidePopover && !sidePopover.classList.contains('hidden') && currentOffer);
+    },
   };
 }
 
@@ -377,8 +553,8 @@ export function renderGenerals(el: HTMLElement, h: PanelHooks): void {
   }).join('');
   el.querySelectorAll<HTMLElement>('[data-general]').forEach((c) => {
     const id = c.dataset.general!;
-    c.addEventListener('mouseenter', () => h.onPreview?.('general', id));
     c.addEventListener('click', () => {
+      h.onPreview?.('general', id);
       h.onChange('general', selectGeneral(h.save, id));
     });
   });
@@ -410,12 +586,12 @@ export function renderWeapons(el: HTMLElement, h: PanelHooks): void {
   }).join('');
   el.querySelectorAll<HTMLElement>('[data-weapon]').forEach((c) => {
     const id = c.dataset.weapon!;
-    c.addEventListener('mouseenter', () => h.onPreview?.('weapon', id));
     c.querySelectorAll<HTMLButtonElement>('[data-act]').forEach((b) =>
       b.addEventListener('click', (e) => {
         e.stopPropagation();
         const act = b.dataset.act;
         const r = act === 'buy' ? buyWeapon(s, id) : act === 'upgrade' ? upgradeWeapon(s, id) : selectWeapon(s, id);
+        h.onPreview?.('weapon', id);
         h.onChange('weapon', r);
       }),
     );
@@ -504,7 +680,7 @@ export function renderShop(el: HTMLElement, h: PanelHooks): void {
           <div class="stage-drag-badge">⟲ Kéo chuột để xoay 360°</div>
         </div>
         <div class="hero-stage-meta">
-          <div class="hero-avatar-box-mini">${renderGeneralSvg(currentGeneral)}</div>
+          <div class="hero-avatar-box-mini">${renderGeneralAvatar(currentGeneral)}</div>
           <div class="hero-stage-text">
             <div class="hero-name-row">
               <b>${currentGeneral.name}</b>
@@ -698,20 +874,21 @@ export function renderHeroDock(el: HTMLElement, h: PanelHooks): void {
       <div class="hero-lore-banner" id="hero-lore-banner">
         <div class="lore-header">
           <span class="lore-icon">${activeLore.icon}</span>
-          <b class="lore-title">${activeLore.title}</b>
-          <span class="lore-year">${activeLore.year}</span>
+          <b class="lore-title">${escapeHtml(activeLore.title)}</b>
+          <span class="lore-year">${escapeHtml(activeLore.year)}</span>
         </div>
-        <div class="lore-sub">${activeLore.sub}</div>
-        <div class="lore-quote">"${activeLore.quote}"</div>
+        <div class="lore-sub">${escapeHtml(activeLore.sub)}</div>
+        <div class="lore-quote">"${escapeHtml(activeLore.quote)}"</div>
       </div>
+      <div class="hero-dock-divider"></div>
       <div class="hero-dock-list" id="hero-dock-list">
         ${GENERALS.map((g) => {
           const sel = currentGeneral === g.id;
           return `
-            <button class="hero-dock-tile ${sel ? 'sel' : ''}" data-general="${g.id}" title="${g.name} - ${g.title}">
-              <div class="tile-avatar-box">${renderGeneralSvg(g)}</div>
+            <button class="hero-dock-tile ${sel ? 'sel' : ''}" data-general="${g.id}" title="${escapeHtml(g.name)} - ${escapeHtml(g.title)} (${escapeHtml(g.passive)})">
+              <div class="tile-avatar-box">${renderGeneralAvatar(g)}</div>
               <div class="tile-info">
-                <b class="tile-name">${g.name}</b>
+                <b class="tile-name">${escapeHtml(g.name)}</b>
               </div>
               ${sel ? '<span class="tile-sel-badge">Đang chọn</span>' : ''}
             </button>`;
@@ -726,67 +903,213 @@ export function renderHeroDock(el: HTMLElement, h: PanelHooks): void {
     bannerEl.innerHTML = `
       <div class="lore-header">
         <span class="lore-icon">${lore.icon}</span>
-        <b class="lore-title">${lore.title}</b>
-        <span class="lore-year">${lore.year}</span>
+        <b class="lore-title">${escapeHtml(lore.title)}</b>
+        <span class="lore-year">${escapeHtml(lore.year)}</span>
       </div>
-      <div class="lore-sub">${lore.sub}</div>
-      <div class="lore-quote">"${lore.quote}"</div>
+      <div class="lore-sub">${escapeHtml(lore.sub)}</div>
+      <div class="lore-quote">"${escapeHtml(lore.quote)}"</div>
     `;
   };
 
+  updateBanner(currentGeneral);
+
   el.querySelectorAll<HTMLButtonElement>('[data-general]').forEach((b) => {
     const id = b.dataset.general!;
-    b.addEventListener('mouseenter', () => {
+    b.addEventListener('click', () => {
+      // Phản hồi chọn tức thì trên giao diện
+      el.querySelectorAll<HTMLButtonElement>('.hero-dock-tile').forEach((tile) => {
+        tile.classList.remove('sel');
+        tile.querySelector('.tile-sel-badge')?.remove();
+      });
+      b.classList.add('sel');
+      const badge = document.createElement('span');
+      badge.className = 'tile-sel-badge';
+      badge.textContent = 'Đang chọn';
+      b.appendChild(badge);
+
       updateBanner(id);
       h.onPreview?.('general', id);
-    });
-    b.addEventListener('click', () => {
       h.onChange('general', selectGeneral(h.save, id));
     });
   });
+}
 
-  const listEl = el.querySelector<HTMLElement>('#hero-dock-list');
-  listEl?.addEventListener('mouseleave', () => {
-    updateBanner(h.save.general);
-    h.onPreview?.('general', h.save.general);
-  });
+export function showSkillDetailsModal(save: Save3D): void {
+  const st = computeStats(save);
+  const w = st.weapon;
+  const cb = comboFor(st.general.id, st.weapon.id);
+  const esk = ESKILLS[st.general.id];
+  const g = st.general;
+
+  const card = showModal(`
+    <div class="skill-detail-modal">
+      <div class="skill-modal-header">
+        <div class="skill-modal-hero">
+          <div class="skill-modal-avatar">${renderGeneralAvatar(g)}</div>
+          <div>
+            <h2 class="skill-modal-name">${escapeHtml(g.name)}</h2>
+            <span class="skill-modal-title">${escapeHtml(g.title)}</span>
+          </div>
+        </div>
+        <button class="skill-modal-close" id="skill-modal-close" title="Đóng (Esc)">✕</button>
+      </div>
+
+      <div class="skill-modal-body">
+        <!-- NỘI TẠI -->
+        <div class="skill-card-row passive">
+          <div class="skill-card-icon-box passive">
+            <span class="skill-icon-emoji">🛡️</span>
+            <span class="skill-key-badge">P</span>
+          </div>
+          <div class="skill-card-content">
+            <div class="skill-card-top-row">
+              <span class="skill-badge-tag passive">NỘI TẠI</span>
+              <b class="skill-card-name">${escapeHtml(g.passive.split(':')[0] || 'Nội tại')}</b>
+            </div>
+            <div class="skill-card-desc">${escapeHtml(g.passive.split(':').slice(1).join(':').trim() || g.passive)}</div>
+          </div>
+        </div>
+
+        <!-- CHIÊU Q -->
+        <div class="skill-card-row ult">
+          <div class="skill-card-icon-box ult">
+            <img src="/skills/${g.id}_q.png" onerror="this.onerror=null; this.src='/skills/q.png'; this.onerror=()=>{this.style.display='none'};" alt="Chiêu Q" />
+            <span class="skill-key-badge">Q</span>
+          </div>
+          <div class="skill-card-content">
+            <div class="skill-card-top-row">
+              <span class="skill-badge-tag ult">CHIÊU Q • TUYỆT KỸ</span>
+              <b class="skill-card-name">${escapeHtml(g.ult)}</b>
+              <span class="skill-cd-badge">⏱ ${g.ultCd}s</span>
+            </div>
+            <div class="skill-card-desc">${escapeHtml(g.ultDesc)}</div>
+          </div>
+        </div>
+
+        <!-- CHIÊU E -->
+        ${esk ? `
+        <div class="skill-card-row eskill">
+          <div class="skill-card-icon-box eskill">
+            <img src="/skills/${g.id}_e.png" onerror="this.onerror=null; this.src='/skills/e.png'; this.onerror=()=>{this.style.display='none'};" alt="Chiêu E" />
+            <span class="skill-key-badge">E</span>
+          </div>
+          <div class="skill-card-content">
+            <div class="skill-card-top-row">
+              <span class="skill-badge-tag eskill">CHIÊU E • ĐẶC BIỆT</span>
+              <b class="skill-card-name">${escapeHtml(esk.name)}</b>
+              <span class="skill-cd-badge">⏱ ${esk.cd}s</span>
+            </div>
+            <div class="skill-card-desc">${escapeHtml(esk.desc)}</div>
+          </div>
+        </div>` : ''}
+
+        <!-- ĐÒN ĐÁNH THƯỜNG -->
+        <div class="skill-card-row atk">
+          <div class="skill-card-icon-box atk">
+            <img src="/skills/${g.id}_atk.png" onerror="this.onerror=null; this.src='/skills/atk.png';" alt="Tấn công" />
+            <span class="skill-key-badge">LMB</span>
+          </div>
+          <div class="skill-card-content">
+            <div class="skill-card-top-row">
+              <span class="skill-badge-tag atk">ĐÒN ĐÁNH</span>
+              <b class="skill-card-name">${escapeHtml(w.name)}</b>
+              <span class="skill-cd-badge">${escapeHtml(KIND_LABEL[w.kind] || 'Tấn công')}</span>
+            </div>
+            <div class="skill-card-desc">${escapeHtml(w.desc)} • Sát thương cơ bản: ${w.dmg}</div>
+          </div>
+        </div>
+
+        <!-- LƯỚT NÉ ĐÒN -->
+        <div class="skill-card-row dash">
+          <div class="skill-card-icon-box dash">
+            <img src="/skills/dash.png" alt="Lướt" />
+            <span class="skill-key-badge">Shift</span>
+          </div>
+          <div class="skill-card-content">
+            <div class="skill-card-top-row">
+              <span class="skill-badge-tag dash">LƯỚT NÉ</span>
+              <b class="skill-card-name">Lướt Né Tránh</b>
+              <span class="skill-cd-badge">⏱ 1.2s</span>
+            </div>
+            <div class="skill-card-desc">Lao nhanh theo hướng di chuyển, lướt qua quái vật và miễn nhiễm mọi sát thương trong 0.25 giây.</div>
+          </div>
+        </div>
+
+        <!-- COMBO THẦN KHÍ (NẾU CÓ) -->
+        ${cb ? `
+        <div class="skill-card-row combo">
+          <div class="skill-card-icon-box combo">
+            <span class="skill-icon-emoji">⚡</span>
+            <span class="skill-key-badge">COMBO</span>
+          </div>
+          <div class="skill-card-content">
+            <div class="skill-card-top-row">
+              <span class="skill-badge-tag combo">COMBO THẦN KHÍ</span>
+              <b class="skill-card-name">${escapeHtml(cb.name)}</b>
+            </div>
+            <div class="skill-card-desc">${escapeHtml(cb.desc)}</div>
+          </div>
+        </div>` : ''}
+      </div>
+
+      <div class="skill-modal-footer">
+        <button class="btn gold" id="skill-modal-btn-close">Đóng (Esc)</button>
+      </div>
+    </div>
+  `);
+
+  card.classList.add('skill-modal-card');
+  card.querySelector('#skill-modal-close')?.addEventListener('click', () => hideModal());
+  card.querySelector('#skill-modal-btn-close')?.addEventListener('click', () => hideModal());
 }
 
 export function renderStats(el: HTMLElement, save: Save3D): void {
   const st = computeStats(save);
   const w = st.weapon;
   const dmgBase = w.dmg;
-  const cb = comboFor(st.general.id, st.weapon.id);
   const esk = ESKILLS[st.general.id];
 
   el.innerHTML = `
     <div class="hero-info-header">
-      <div class="hero-info-avatar">${renderGeneralSvg(st.general)}</div>
+      <div class="hero-info-avatar">${renderGeneralAvatar(st.general)}</div>
       <div class="hero-info-title">
-        <h2>${st.general.name}</h2>
-        <small>${st.general.title}</small>
+        <h2>${escapeHtml(st.general.name)}</h2>
+        <small>${escapeHtml(st.general.title)}</small>
       </div>
     </div>
 
-    <div class="hero-skills-mini">
-      <div class="skill-mini-row passive">
-        <span class="skill-mini-tag passive">Nội tại</span>
-        <div class="skill-mini-desc">${st.general.passive}</div>
+    <!-- CỤM Ô XEM KỸ NĂNG CÓ ẢNH VÀ NÚT MỞ BẢNG CHI TIẾT -->
+    <div class="hero-skills-compact" id="hero-skills-compact" role="button" tabindex="0" title="Bấm để xem chi tiết bộ kỹ năng">
+      <div class="skills-compact-header">
+        <span class="skills-compact-title">⚡ BỘ KỸ NĂNG</span>
+        <span class="skills-compact-cta">Chi tiết ❯</span>
       </div>
-      <div class="skill-mini-row ult">
-        <span class="skill-mini-tag ult">Chiêu Q</span>
-        <div class="skill-mini-desc"><b>${st.general.ult}</b>: ${st.general.ultDesc}</div>
+      <div class="skills-compact-row">
+        <div class="skill-thumb passive" title="Nội tại: ${escapeHtml(st.general.passive)}">
+          <span class="thumb-key">P</span>
+          <span class="thumb-emoji">🛡️</span>
+        </div>
+        <div class="skill-thumb atk" title="Đánh thường: ${escapeHtml(w.name)}">
+          <img src="/skills/${st.general.id}_atk.png" onerror="this.onerror=null; this.src='/skills/atk.png';" alt="Atk" />
+          <span class="thumb-key">LMB</span>
+        </div>
+        <div class="skill-thumb dash" title="Lướt né đòn (Shift)">
+          <img src="/skills/dash.png" alt="Dash" />
+          <span class="thumb-key">Shift</span>
+        </div>
+        ${esk ? `
+        <div class="skill-thumb eskill" title="Chiêu E: ${escapeHtml(esk.name)}">
+          <img src="/skills/${st.general.id}_e.png" onerror="this.onerror=null; this.src='/skills/e.png';" alt="E" />
+          <span class="thumb-key">E</span>
+        </div>` : ''}
+        <div class="skill-thumb ult" title="Chiêu Q: ${escapeHtml(st.general.ult)}">
+          <img src="/skills/${st.general.id}_q.png" onerror="this.onerror=null; this.src='/skills/q.png';" alt="Q" />
+          <span class="thumb-key">Q</span>
+        </div>
       </div>
-      ${esk ? `
-      <div class="skill-mini-row eskill">
-        <span class="skill-mini-tag eskill">Chiêu E</span>
-        <div class="skill-mini-desc"><b>${esk.name}</b>: ${esk.desc}</div>
-      </div>` : ''}
-      ${cb ? `
-      <div class="skill-mini-row combo">
-        <span class="skill-mini-tag combo">Combo</span>
-        <div class="skill-mini-desc"><b>${cb.name}</b>: ${cb.desc}</div>
-      </div>` : ''}
+      <button class="btn-open-skills-card" id="btn-open-skills-card" type="button">
+        📜 Xem chi tiết bộ kỹ năng
+      </button>
     </div>
 
     <div class="hero-stats-mini">
@@ -799,6 +1122,11 @@ export function renderStats(el: HTMLElement, save: Save3D): void {
     </div>
 
     <div class="hero-record-mini">Kỷ lục: Màn ${save.bestWave} • Hạ ${fmt(save.kills)} quái</div>`;
+
+  el.querySelector('#hero-skills-compact')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    showSkillDetailsModal(save);
+  });
 }
 
 /* ---------- Sảnh chờ ---------- */
@@ -819,13 +1147,55 @@ export class LobbyUI {
     const root = $('lobby');
     root.innerHTML = `
       <header class="top">
-        <div class="brand"><b>HỒN VIỆT 3D</b><small>Đấu Trường Danh Tướng</small></div>
-        <nav class="tabs lobby-nav" id="lobby-tabs">
-          <button data-tab="general">Tướng</button><button data-tab="weapon">Vũ khí</button><button data-tab="shop">Cửa hàng</button><button data-tab="quest">Nhiệm vụ</button><button data-tab="setting">Cài đặt</button>
-        </nav>
+        <div class="top-left">
+          <div class="brand"><b>HỒN VIỆT 3D</b><small>Đấu Trường Danh Tướng</small></div>
+          <nav class="tabs lobby-nav" id="lobby-tabs">
+            <button data-tab="general" class="nav-tab-btn" title="Danh tướng">
+              <span class="nav-tab-icon">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5zm14 3c0 .6-.4 1-1 1H6c-.6 0-1-.4-1-1v-1h14v1z"/>
+                </svg>
+              </span>
+              <span class="nav-tab-label">Tướng</span>
+            </button>
+            <button data-tab="weapon" class="nav-tab-btn" title="Kho binh khí">
+              <span class="nav-tab-icon">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <path d="M19.7 4.3a1 1 0 00-1.4 0L12 10.6 8.7 7.3a1 1 0 00-1.4 0L5.9 8.7a1 1 0 000 1.4L9.2 13.4 3.3 19.3a1 1 0 000 1.4l.7.7a1 1 0 001.4 0L11.3 15.5l3.3 3.3a1 1 0 001.4 0l1.4-1.4a1 1 0 000-1.4L14.1 12.7l6.3-6.3a1 1 0 000-1.4l-.7-.7z"/>
+                </svg>
+              </span>
+              <span class="nav-tab-label">Vũ khí</span>
+            </button>
+            <button data-tab="shop" class="nav-tab-btn" title="Cửa hàng thương nhân">
+              <span class="nav-tab-icon">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <path d="M12 2l-5.5 4h11L12 2zm-6.5 5l-3.5 4 10 11 10-11-3.5-4h-13z"/>
+                </svg>
+              </span>
+              <span class="nav-tab-label">Cửa hàng</span>
+            </button>
+            <button data-tab="quest" class="nav-tab-btn" title="Chiến dịch & Nhiệm vụ">
+              <span class="nav-tab-icon">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
+                </svg>
+              </span>
+              <span class="nav-tab-label">Nhiệm vụ</span>
+            </button>
+            <button data-tab="setting" class="nav-tab-btn" title="Thiết lập hệ thống">
+              <span class="nav-tab-icon">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+                </svg>
+              </span>
+              <span class="nav-tab-label">Cài đặt</span>
+            </button>
+          </nav>
+        </div>
         <div class="top-right"><span class="gold-chip" id="lobby-gold"></span></div>
       </header>
-      <aside class="panel left hidden" id="lobby-panel-left">
+      <div class="lobby-backdrop hidden" id="lobby-backdrop"></div>
+      <aside class="panel center-panel hidden" id="lobby-panel-left">
         <div class="panel-header" id="panel-header">
           <h3 id="panel-title">Danh sách</h3>
           <button class="btn-close" id="panel-close-btn" title="Quay lại sảnh chọn tướng">✕</button>
@@ -860,6 +1230,14 @@ export class LobbyUI {
     );
     $('play').addEventListener('click', () => h.onPlay());
     $('online-btn').addEventListener('click', () => h.onOnline());
+
+    const backdrop = $('lobby-backdrop');
+    if (backdrop) {
+      backdrop.addEventListener('click', () => {
+        this.tab = 'general';
+        this.render();
+      });
+    }
 
     const ctrlBtn = $('ctrl-hint-btn');
     const ctrlPop = $('ctrl-popover');
@@ -920,17 +1298,19 @@ export class LobbyUI {
     const heroDock = $('lobby-hero-dock');
     const lobbyInfo = $('lobby-info');
     const panelTitle = $('panel-title');
+    const backdrop = $('lobby-backdrop');
+
+    // Dọn dẹp các class chế độ cũ của panel trung tâm
+    panelLeft?.classList.remove('shop-mode', 'weapon-mode', 'quest-mode', 'setting-mode');
 
     if (this.tab === 'shop') {
       lobbyEl?.classList.add('shop-mode');
-      panelLeft?.classList.add('shop-mode');
     } else {
       if (activeShopHeroStage) {
         activeShopHeroStage.destroy();
         activeShopHeroStage = null;
       }
       lobbyEl?.classList.remove('shop-mode');
-      panelLeft?.classList.remove('shop-mode');
     }
 
     const hooks: PanelHooks = {
@@ -945,29 +1325,31 @@ export class LobbyUI {
 
     if (this.tab === 'general') {
       panelLeft?.classList.add('hidden');
+      backdrop?.classList.add('hidden');
       heroDock?.classList.remove('hidden');
       lobbyInfo?.classList.remove('hidden');
       if (heroDock) renderHeroDock(heroDock, hooks);
       renderStats(lobbyInfo, s);
     } else {
       heroDock?.classList.add('hidden');
+      lobbyInfo?.classList.add('hidden');
       panelLeft?.classList.remove('hidden');
+      backdrop?.classList.remove('hidden');
+
       if (this.tab === 'shop') {
-        lobbyInfo?.classList.add('hidden');
+        panelLeft?.classList.add('shop-mode');
         if (panelTitle) panelTitle.textContent = 'Cửa hàng trang bị';
         renderShop(list, hooks);
       } else if (this.tab === 'weapon') {
-        lobbyInfo?.classList.remove('hidden');
+        panelLeft?.classList.add('weapon-mode');
         if (panelTitle) panelTitle.textContent = 'Kho vũ khí';
         renderWeapons(list, hooks);
-        renderStats(lobbyInfo, s);
       } else if (this.tab === 'quest') {
-        lobbyInfo?.classList.remove('hidden');
+        panelLeft?.classList.add('quest-mode');
         if (panelTitle) panelTitle.textContent = 'Nhiệm vụ & Thành tích';
         renderQuests(list, hooks);
-        renderStats(lobbyInfo, s);
       } else if (this.tab === 'setting') {
-        lobbyInfo?.classList.add('hidden');
+        panelLeft?.classList.add('setting-mode');
         if (panelTitle) panelTitle.textContent = 'Cài đặt';
         renderSettings(list);
       }
@@ -987,9 +1369,21 @@ export function showModal(html: string): HTMLElement {
     cards.classList.add('paused-hidden');
   }
   m.innerHTML = `<div class="modal-card">${html}</div>`;
+  m.onclick = (e) => {
+    if (e.target === m) hideModal();
+  };
   m.classList.remove('hidden');
   return m.firstElementChild as HTMLElement;
 }
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const m = $('modal');
+    if (m && !m.classList.contains('hidden')) {
+      hideModal();
+    }
+  }
+});
 
 export function hideModal(): void {
   if (activeShopHeroStage) {
@@ -999,6 +1393,7 @@ export function hideModal(): void {
   const m = $('modal');
   m.classList.add('hidden');
   m.innerHTML = '';
+  m.onclick = null;
   if (modalCardsPaused) {
     modalCardsPaused = false;
     const cards = $('cards');

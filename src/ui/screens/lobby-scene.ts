@@ -20,7 +20,7 @@ export class LobbyScene {
   private equipped: Record<GearSlot, string | null> = { head: null, body: null, feet: null, charm: null };
   private swing = 0;
   private nextSwing = 2.5;
-  private lookX = -1.8;
+  private lookX = 0;
   private mouseX = 0;
   private mouseY = 0;
   private entrance = 0;
@@ -41,8 +41,8 @@ export class LobbyScene {
   resize(w: number, h: number): void {
     this.camera.aspect = w / Math.max(1, h);
     this.camera.updateProjectionMatrix();
-    this.lookX = w / h > 1.5 ? -0.7 : 0;
-    this.camera.position.x = this.lookX * 0.25;
+    this.lookX = 0;
+    this.camera.position.x = 0;
     this.camera.position.z = w / h > 1.5 ? 8.6 : 10.5;
   }
 
@@ -121,12 +121,11 @@ export class LobbyScene {
       if (this.rig.cape) this.rig.cape.rotation.x = 0.12 + Math.sin(t * 1.8) * 0.06;
     }
 
-    // Camera 3D Parallax mượt mà theo di chuyển chuột
-    const baseCamX = this.lookX * 0.25;
-    const targetCamX = baseCamX + this.mouseX * 0.65;
-    const targetCamY = 3.2 - this.mouseY * 0.35;
+    // Camera 3D Parallax mượt mà theo di chuyển chuột quanh trung tâm màn hình
+    const targetCamX = this.mouseX * 0.45;
+    const targetCamY = 3.2 - this.mouseY * 0.25;
     this.camera.position.x += (targetCamX - this.camera.position.x) * 0.06;
     this.camera.position.y += (targetCamY - this.camera.position.y) * 0.06;
-    this.camera.lookAt(this.lookX + this.mouseX * 0.22, 1.9 - this.mouseY * 0.1, 0);
+    this.camera.lookAt(this.mouseX * 0.15, 1.85 - this.mouseY * 0.08, 0);
   }
 }

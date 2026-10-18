@@ -22,6 +22,18 @@ export interface Stats {
   goldMult: number;
   /** Hệ số thời gian hồi chiêu Q (thẻ Nội Công làm nhỏ đi). */
   ultCdMul: number;
+  /** Hệ số thời gian hồi chiêu E. */
+  eCdMul: number;
+  /** Hệ số sát thương kỹ năng E. */
+  eDmgMul: number;
+  /** Hệ số hồi chiêu Lướt. */
+  dashCdMul: number;
+  /** Hút máu (tỉ lệ 0..1). */
+  lifesteal: number;
+  /** Sát thương chí mạng (mặc định 1.5). */
+  critDmgMul: number;
+  /** Tỉ lệ phản đòn khi bị đánh. */
+  thorns: number;
   /** Máu tự hồi mỗi giây (thẻ Hồi Phục). */
   regen: number;
 }
@@ -52,6 +64,12 @@ export function computeStats(src: StatSource): Stats {
     reduce: Math.min(0.6, body?.reduce ?? 0),
     goldMult: 1 + (charm?.gold ?? 0),
     ultCdMul: 1,
+    eCdMul: 1,
+    eDmgMul: 1,
+    dashCdMul: 1,
+    lifesteal: 0,
+    critDmgMul: 1.5,
+    thorns: 0,
     regen: 0,
   };
 }

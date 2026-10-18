@@ -8,7 +8,7 @@
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23c8963e'/%3E%3Ccircle cx='16' cy='16' r='9' fill='%232a1c12'/%3E%3Ccircle cx='16' cy='16' r='4' fill='%23c8963e'/%3E%3C/svg%3E" />
   </head>
   <body>
-    <canvas id="c"></canvas>
+    <canvas id="c" tabindex="0" inputmode="none"></canvas>
     <div id="ui">
       <section id="lobby" class="screen hidden"></section>
       <section id="online" class="screen hidden"></section>
@@ -40,13 +40,25 @@
       </div>
 
       <section id="hud" class="hidden">
+        <!-- GÓC TRÊN TRÁI: VÀNG, HẠ QUÁI & BẢNG CHỈ SỐ NHÂN VẬT (THAY THẾ CHO HÌNH 2) -->
         <div class="hud-tl">
-          <div class="hud-name" id="hud-name"></div>
-          <div class="bar hp"><i id="hp-fill"></i><span id="hp-text"></span></div>
-          <div class="bar xp"><i id="xp-fill"></i><span id="xp-text"></span></div>
-          <div class="hud-cards hidden" id="hud-cards"></div>
+          <div class="hud-name hidden" id="hud-name"></div>
           <div class="chips"><span id="hud-gold"></span><span id="hud-run"></span><span id="hud-kills"></span></div>
           <div class="team hidden" id="hud-team"></div>
+          <div class="bar hp hidden"><i id="hp-fill"></i><span id="hp-text"></span></div>
+          <div class="bar xp hidden"><i id="xp-fill"></i><span id="xp-text"></span></div>
+
+          <!-- BẢNG CHỈ SỐ BÊN TRÊN GÓC TRÁI (HÌNH 1) -->
+          <div class="lol-stats-box" id="lol-stats-box">
+            <div class="lol-stat-item" title="Sát Thương Đòn Đánh"><span class="lol-stat-icon">🗡️</span><b id="lol-stat-dmg">120</b></div>
+            <div class="lol-stat-item" title="Tốc Độ Đánh"><span class="lol-stat-icon">⚡</span><b id="lol-stat-atkspd">1.00</b></div>
+            <div class="lol-stat-item" title="Giáp (Giảm Sát Thương)"><span class="lol-stat-icon">🛡️</span><b id="lol-stat-def">0%</b></div>
+            <div class="lol-stat-item" title="Tỉ Lệ Chí Mạng"><span class="lol-stat-icon">💥</span><b id="lol-stat-crit">5%</b></div>
+            <div class="lol-stat-item" title="Tốc Độ Di Chuyển"><span class="lol-stat-icon">👟</span><b id="lol-stat-spd">350</b></div>
+            <div class="lol-stat-item" title="Giảm Hồi Chiêu"><span class="lol-stat-icon">⏳</span><b id="lol-stat-cdr">0%</b></div>
+          </div>
+
+          <div class="hud-cards hidden" id="hud-cards"></div>
         </div>
         <div class="hud-tr">
           <div class="hud-wave" id="hud-wave"></div>
@@ -58,14 +70,111 @@
           <div class="boss-name" id="boss-name"></div>
           <div class="bar boss"><i id="boss-fill"></i></div>
         </div>
-        <div class="hud-left-skills" id="hud-skills">
-          <div class="slot" id="cd-atk"><kbd>Chuột trái</kbd><b id="cd-atk-name"></b></div>
-          <div class="slot" id="cd-dash"><kbd>Shift</kbd><b>Lướt</b></div>
-          <div class="slot" id="cd-e"><kbd>E</kbd><b id="cd-e-name"></b></div>
-          <div class="slot" id="cd-ult"><kbd>Q</kbd><b id="cd-ult-name"></b></div>
+
+        <!-- Ô NÂNG CẤP BÊN TRÁI MÀN HÌNH (KHÔNG PAUSE GAME KHI LÊN CẤP) -->
+        <div class="side-levelup-wrap hidden" id="side-levelup-wrap">
+          <button class="side-levelup-btn" id="side-levelup-btn" title="Có nâng cấp mới! Nhấn chuột trái hoặc phím [B] để mở">
+            <span class="levelup-pulse"></span>
+            <div class="levelup-arrow-box" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <path d="M12 4l-7 7h4v9h6v-9h4z"/>
+              </svg>
+            </div>
+            <div class="levelup-text-group">
+              <div class="levelup-title-row">
+                <span class="levelup-label">NÂNG CẤP</span>
+                <kbd class="levelup-key-hint">B</kbd>
+              </div>
+              <span class="levelup-badge" id="side-levelup-count">+1</span>
+            </div>
+          </button>
+          <div class="side-levelup-popover hidden" id="side-levelup-popover">
+            <div class="popover-title">
+              <span>LÊN CẤP! CHỌN 1 NÂNG CẤP</span>
+              <small>(Phím 1, 2, 3 hoặc Click • Phím B đóng/mở)</small>
+            </div>
+            <div class="popover-cards-col" id="side-cards-container"></div>
+          </div>
         </div>
 
-        <div class="hud-bottom-dock" id="hud-bottom-dock">
+        <!-- THANH ĐIỀU KHIỂN CHÍNH (BOTTOM-CENTER): CHỈ GỒM ẢNH TƯỚNG VÀ BỘ CHIÊU THỨC -->
+        <div class="lol-hud-bar" id="lol-hud-bar">
+          <!-- AVATAR TRÒN VIỀN KIM LOẠI VÀNG VỚI CẤP ĐỘ -->
+          <div class="lol-champ-wrap" id="lol-champ-wrap">
+            <div class="lol-portrait-ring">
+              <img id="lol-avatar-img" class="lol-avatar-img" alt="Tướng" />
+              <div class="lol-avatar-fallback hidden" id="lol-avatar-fallback">👑</div>
+            </div>
+            <div class="lol-lvl-circle" id="lol-level-badge">1</div>
+          </div>
+
+          <!-- KHUNG KỸ NĂNG VÀ THANH MÁU / KINH NGHIỆM (GIỐNG LOL HÌNH 1) -->
+          <div class="lol-action-panel">
+            <!-- 4 Ô KỸ NĂNG: ĐÁNH THƯỜNG, LƯỚT, E, Q -->
+            <div class="lol-skills-group">
+              <!-- Ô 1: Đánh thường -->
+              <div class="lol-skill-slot" id="cd-atk" title="Đòn Đánh Thường (Chuột trái)">
+                <div class="lol-skill-box">
+                  <img id="img-skill-atk" class="lol-skill-img" src="/skills/atk.png" alt="Đánh Thường" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+                  <div class="lol-skill-fallback" id="fb-skill-atk">⚔️</div>
+                  <div class="lol-cd-sweep" id="cd-atk-sweep"></div>
+                </div>
+                <div class="lol-skill-key">Chuột T</div>
+                <b id="cd-atk-name" class="hidden"></b>
+              </div>
+
+              <!-- Ô 2: Lướt (Dash) -->
+              <div class="lol-skill-slot" id="cd-dash" title="Lướt Tránh Đòn (Space / Shift)">
+                <div class="lol-skill-box">
+                  <img id="img-skill-dash" class="lol-skill-img" src="/skills/dash.png" alt="Lướt" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+                  <div class="lol-skill-fallback" id="fb-skill-dash">💨</div>
+                  <div class="lol-cd-sweep" id="cd-dash-sweep"></div>
+                  <div class="lol-cd-sec" id="cd-dash-sec"></div>
+                </div>
+                <div class="lol-skill-key">Space</div>
+              </div>
+
+              <!-- Ô 3: Kỹ năng E -->
+              <div class="lol-skill-slot" id="cd-e" title="Kỹ Năng E">
+                <div class="lol-skill-box">
+                  <img id="img-skill-e" class="lol-skill-img" src="" alt="Kỹ Năng E" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+                  <div class="lol-skill-fallback" id="fb-skill-e">✨</div>
+                  <div class="lol-cd-sweep" id="cd-e-sweep"></div>
+                  <div class="lol-cd-sec" id="cd-e-sec"></div>
+                </div>
+                <div class="lol-skill-key">E</div>
+                <b id="cd-e-name" class="hidden"></b>
+              </div>
+
+              <!-- Ô 4: Chiêu cuối Q (Ultimate) -->
+              <div class="lol-skill-slot ult" id="cd-ult" title="Chiêu Cuối Q">
+                <div class="lol-skill-box">
+                  <img id="img-skill-ult" class="lol-skill-img" src="" alt="Chiêu Cuối Q" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+                  <div class="lol-skill-fallback" id="fb-skill-ult">🐉</div>
+                  <div class="lol-cd-sweep" id="cd-ult-sweep"></div>
+                  <div class="lol-cd-sec" id="cd-ult-sec"></div>
+                </div>
+                <div class="lol-skill-key">Q</div>
+                <b id="cd-ult-name" class="hidden"></b>
+              </div>
+            </div>
+
+            <!-- THANH MÁU (XANH LÁ) & THANH KINH NGHIỆM (XANH DƯƠNG) (GIỐNG LOL HÌNH 1) -->
+            <div class="lol-vital-bars">
+              <div class="lol-bar-track hp">
+                <div class="lol-bar-fill hp" id="lol-hp-fill"></div>
+                <span class="lol-bar-text" id="lol-hp-text">100 / 100</span>
+              </div>
+              <div class="lol-bar-track xp">
+                <div class="lol-bar-fill xp" id="lol-xp-fill"></div>
+                <span class="lol-bar-text" id="lol-xp-text">Cấp 1</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Khung tướng cũ tương thích ngược -->
+        <div class="hud-bottom-dock hidden" id="hud-bottom-dock">
           <div class="hero-frame" id="hero-frame">
             <div class="hero-avatar" id="hero-avatar"></div>
             <div class="hero-meta">
