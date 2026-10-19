@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { settings, saveSettings } from '../infrastructure/persistence/settings-repository';
+import { GAME_CONSTANTS } from '../config/game-constants';
 import { showTouch, touch } from '../ui/input/touch-controls';
 import { ESKILLS, Q_SKILLS, GENERALS, MAX_WEAPON_LEVEL, MONSTERS, TRUNG_NHI_LOOK, comboFor, waveComposition, type MonsterType } from '../domain/data';
 import { CARDS, cardById, pickOffer, xpNeed } from '../domain/combat/cards';
@@ -239,7 +240,6 @@ export class Arena {
   /** Giây còn lại của khoảnh khắc khựng hình khi đánh chí mạng hoặc hạ quái lớn (chỉ chơi một mình). */
   private hitStop = 0;
   private offerIds: string[] = [];
-  private aimMarker: THREE.Group | null = null;
   private minimap = new MinimapRenderer();
   private summons: Summon[] = [];
   private summonViews = new Map<number, SummonView>();
@@ -396,7 +396,6 @@ export class Arena {
     this.ambBiome = -1;
     this.offerOpen = false;
     this.hud.showCards(null, () => {});
-    if (this.aimMarker) this.aimMarker.visible = false;
     this.cancelEAim();
     this.cancelQAim();
     this.detach();
@@ -574,7 +573,7 @@ export class Arena {
   };
   private onWheel = (e: WheelEvent): void => {
     e.preventDefault();
-    settings.zoom = Math.max(9, Math.min(36, settings.zoom * Math.exp(e.deltaY * 0.0012)));
+    settings.zoom = Math.max(GAME_CONSTANTS.CAMERA_ZOOM_MIN, Math.min(GAME_CONSTANTS.CAMERA_ZOOM_MAX, settings.zoom * Math.exp(e.deltaY * 0.0012)));
     saveSettings();
   };
   private onMouseUp = (e: MouseEvent): void => {
@@ -854,7 +853,6 @@ export class Arena {
       case 'rage': this.ultRage(a); break;
       case 'swamp': this.ultSwamp(a); break;
       case 'poem': this.ultPoem(a); break;
-      case 'proclaim': this.ultProclaim(a); break;
       case 'bamboo': this.ultBamboo(a); break;
       case 'con_son_stream': this.ultConSonStream(a); break;
     }
@@ -1310,11 +1308,6 @@ export class Arena {
     return c;
   }
 
-  /** Vòng chỉ định chiêu: chỉ hiển thị khi người chơi chủ động bật ngắm kỹ năng, không tự hiện vĩnh viễn trên sàn. */
-  private updateAimMarker(): void {
-    if (this.aimMarker) this.aimMarker.visible = false;
-  }
-
   /**
    * Nguyễn Trãi: Suối Côn Sơn Bào Mòn.
    * Nguyễn Trãi vung quạt trúc niệm thơ, từ chân tuôn trào dòng suối ngọc xanh biếc cuộn sóng,
@@ -1515,32 +1508,6 @@ export class Arena {
       }
     }
     this.conSonStreams = this.conSonStreams.filter((s) => s.t > 0);
-  }
-
-  /** Nguyễn Trãi: Bình Ngô Đại Cáo. Hỗ trợ cả đội, làm quái hoảng sợ. */
-  private ultProclaim(a: Actor): void {
-    const r = 16;
-    this.ring(a.pos, r, 0x9ad0ff, 0.9);
-    this.ring(a.pos, r * 0.6, 0xffffff, 0.7);
-    this.burst(a.pos.clone().setY(1.4), 0x9ad0ff, 36, 11, 1.1);
-    this.addShake(0.5);
-    for (const pl of this.actors.values()) {
-      if (!pl.alive || pl.pos.distanceTo(a.pos) > r) continue;
-      pl.dmgBuffUntil = this.time + 8;
-      pl.guardUntil = Math.max(pl.guardUntil, this.time + 3);
-      const heal = Math.round(pl.stats.maxHp * 0.15);
-      pl.hp = Math.min(pl.stats.maxHp, pl.hp + heal);
-      this.popAt(pl.pos, `+${heal}`, 'heal', 2.6);
-      this.ring(pl.pos, 2.4, 0x9ad0ff, 0.6);
-    }
-    for (const m of this.mons) {
-      if (m.dead || m.pos.distanceTo(a.pos) > r + m.def.radius) continue;
-      this.damageMon(m, 110, a.pos, 6, a);
-      if (!m.dead) {
-        this.applyFear(m, 2.5);
-        this.applySlow(m, 4, 0.6);
-      }
-    }
   }
 
   /** Phù Đổng Thiên Vương: Nhổ Tre Đằng Ngà. Ba vòng quật rồi một đòn cuối làm choáng. */
@@ -2923,7 +2890,6 @@ export class Arena {
     this.updateFx(dt);
     this.updateHud();
     this.updateCamera(dt);
-    this.updateAimMarker();
     this.drawMinimap(dt);
   }
 
@@ -3181,7 +3147,7 @@ export class Arena {
     if (!es || !a.alive) return;
     if (this.role === 'client') {
       if (this.time < a.eReady) return;
-      a.eReady = this.time + es.cd * a.stats.ultCdMul * (a.stats.eCdMul ?? 1);
+      a.eReady = this.time + es.cd * (a.stats.eCdMul ?? 1);
       a.eSeq++;
     } else this.doE(a);
   }
@@ -3239,7 +3205,7 @@ export class Arena {
   private doE(a: Actor): void {
     const es = ESKILLS[a.stats.general.id];
     if (!es || !a.alive || this.time < a.eReady) return;
-    a.eReady = this.time + es.cd * a.stats.ultCdMul * (a.stats.eCdMul ?? 1);
+    a.eReady = this.time + es.cd * (a.stats.eCdMul ?? 1);
     this.popAt(a.pos, es.name, 'crit', 3.6);
     this.playSfx('boom');
     const near = (p: THREE.Vector3, r: number): Mon[] => this.mons.filter((m) => !m.dead && m.pos.distanceTo(p) < r + m.def.radius);
@@ -3282,7 +3248,7 @@ export class Arena {
           this.addShake(0.65);
           this.burst(boomPt.clone().setY(1.2), 0xff3b00, 36, 12, 1.4);
           for (const m of near(boomPt, 6.5)) {
-            if (m.dead) return;
+            if (m.dead) continue;
             this.damageMon(m, 75, boomPt, 10, a);
             if (!m.dead) this.applyBurn(m, 3, a);
           }
@@ -4159,7 +4125,7 @@ export class Arena {
     const atkCd = w.cd / a.stats.atkSpeed;
     const dashCd = 2.2 * (a.stats.dashCdMul ?? 1);
     const ultCd = a.stats.general.ultCd * a.stats.ultCdMul;
-    const eCd = (ESKILLS[a.stats.general.id]?.cd ?? 10) * a.stats.ultCdMul * (a.stats.eCdMul ?? 1);
+    const eCd = (ESKILLS[a.stats.general.id]?.cd ?? 10) * (a.stats.eCdMul ?? 1);
 
     const remAtk = Math.max(0, a.atkReady - this.time);
     const remDash = Math.max(0, a.dashReady - this.time);
@@ -4560,7 +4526,7 @@ export class Arena {
     if (!c) return;
     a.cards[id] = (a.cards[id] ?? 0) + 1;
     c.apply(a.stats);
-    if (id === 'the_luc' && this.role !== 'client') a.hp = Math.min(a.stats.maxHp, a.hp + 20);
+    if (id === 'the_luc' && this.role !== 'client') a.hp = Math.min(a.stats.maxHp, a.hp + 25);
     if (a.local) this.refreshChips();
   }
 

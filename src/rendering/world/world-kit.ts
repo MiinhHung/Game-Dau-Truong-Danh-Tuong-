@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { box, cone, cyl, mat, sph } from '../primitives/shapes';
+import { GAME_CONSTANTS } from '../../config/game-constants';
 
 export interface Obstacle {
   x: number;
@@ -7,7 +8,7 @@ export interface Obstacle {
   r: number;
 }
 
-export const ARENA_R = 72;
+export const ARENA_R = GAME_CONSTANTS.ARENA_RADIUS;
 
 export function rng(seed: number): () => number {
   let a = seed >>> 0;

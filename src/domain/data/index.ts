@@ -42,7 +42,7 @@ export interface General {
   ult: string;
   ultColor: number;
   /** Kiểu chiêu cuối, quyết định cách thi triển trong arena.ts. */
-  ultKind: 'army' | 'rush' | 'dragon' | 'summon' | 'rage' | 'swamp' | 'poem' | 'proclaim' | 'bamboo' | 'con_son_stream';
+  ultKind: 'army' | 'rush' | 'dragon' | 'summon' | 'rage' | 'swamp' | 'poem' | 'bamboo' | 'con_son_stream';
   ultCd: number;
   ultDesc: string;
   look: HumanSpec;

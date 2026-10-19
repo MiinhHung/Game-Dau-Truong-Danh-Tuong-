@@ -2,79 +2,73 @@
 
 Dự án game **Hồn Việt 3D: Đấu Trường Danh Tướng** được viết bằng **TypeScript** kết hợp thư viện đồ họa **Three.js** và bundler **Vite**.
 
-Mã nguồn trong thư mục `src/arena3d/` được chia thành 5 phân hệ logic rõ ràng:
+Mã nguồn được chia theo tầng: `config` và `shared` dùng chung, `domain` chứa dữ liệu và luật chơi thuần, `infrastructure` lo lưu trữ, mạng, âm thanh, `rendering` dựng mọi thứ 3D, `game` điều phối trận đấu, `ui` là giao diện HTML đè lên canvas.
 
 ```
 src/
-└── arena3d/
-    ├── index.ts               # Barrel export tập trung cho toàn bộ module
-    │
-    ├── [1. Core & Gameplay]
-    │   ├── main.ts            # Entry point: khởi tạo Three.js canvas, quản lý chuyển cảnh
-    │   ├── arena.ts           # Game loop chính: va chạm, quái, đòn đánh, kỹ năng, rơi đồ
-    │   └── arenaTypes.ts      # Kiểu dữ liệu TypeScript cốt lõi (Actor, Mon, Proj, Hud, Link)
-    │
-    ├── [2. Multiplayer & Networking]
-    │   ├── net.ts             # WebSocket client kết nối máy chủ, xử lý relay gói tin trận
-    │   └── online.ts          # Giao diện sảnh online, phòng chờ, chat, quản lý ID & secret
-    │
-    ├── [3. Systems & Game Data]
-    │   ├── data.ts            # Dữ liệu danh tướng, vũ khí, quái vật, combo, wave monster
-    │   ├── cards.ts           # Hệ thống thẻ bài / ngọc kỹ năng nhận khi lên cấp
-    │   ├── quests.ts          # Hệ thống nhiệm vụ ngày và 13 thành tích tự động
-    │   ├── shop.ts            # Hệ thống cửa hàng mua trang bị giữa các đợt quái
-    │   ├── stats.ts           # Thuật toán tính toán chỉ số nhân vật (máu, giáp, sát thương)
-    │   ├── save.ts            # Quản lý lưu trữ / tải tiến trình người chơi từ localStorage
-    │   ├── settings.ts        # Quản lý cài đặt âm thanh, camera, góc nhìn
-    │   └── sfx.ts             # Hệ thống âm thanh procedural tổng hợp bằng Web Audio API
-    │
-    ├── [4. 3D Graphics & World]
-    │   ├── models.ts          # Dựng mô hình 3D procedural (tướng, quái, vũ khí, hiệu ứng)
-    │   ├── glbAvatar.ts       # Trình nạp mô hình 3D ngoài (định dạng GLB)
-    │   ├── world.ts           # Khởi tạo mặt sàn võ đài, ranh giới, đạo cụ sàn đấu
-    │   ├── worldKit.ts        # Bộ công cụ tạo hình học 3D địa hình và môi trường
-    │   ├── biomes.ts          # 5 quần xã sinh thái (Đồng quê, Rừng tre, Đầm lầy, v.v.)
-    │   ├── hazards.ts         # Mối nguy thiên tai kích hoạt từ màn 21 trở đi
-    │   ├── swamp.ts           # Hiệu ứng bùn lầy và mặt nước đầm lầy
-    │   ├── ambience.ts        # Âm thanh môi trường và thời tiết theo từng biome
-    │   └── eskillFx.ts        # Hiệu ứng hình ảnh kỹ năng phụ (E-skill) và tia ngắm
-    │
-    └── [5. User Interface & Controls]
-        ├── ui.ts              # HUD trận đấu, thanh HP/XP, minimap, popup GameOver/Pause
-        ├── lobby.ts           # Giao diện xem trước tướng & vũ khí 3D tại sảnh chính
-        ├── touch.ts           # Cần điều khiển ảo (Virtual Joystick) và nút bấm cảm ứng
-        └── arena3d.css        # Toàn bộ stylesheet giao diện game (HUD, sảnh, responsive)
+├── main.ts                     # Entry point: renderer, vòng lặp render, chuyển giữa sảnh và trận
+├── index.ts                    # Barrel export toàn bộ public API
+├── arena3d/index.ts            # Re-export tương thích ngược cho script cũ
+│
+├── config/
+│   ├── env.ts                  # VITE_SERVER_URL, chuẩn hóa địa chỉ máy chủ, định dạng ID bạn bè
+│   ├── game-constants.ts       # Bán kính sân, giới hạn zoom camera
+│   └── storage-keys.ts         # Khóa localStorage
+├── shared/logger.ts            # Logger theo cấp độ
+│
+├── domain/
+│   ├── data/index.ts           # 9 danh tướng, 7 vũ khí, 12 trang bị, 23 loại quái, kỹ năng E/Q, combo, tiến hóa, thành phần đợt quái
+│   ├── combat/stats.ts         # computeStats: chỉ số thực chiến từ tướng, vũ khí, trang bị
+│   ├── combat/cards.ts         # 18 thẻ nâng cấp khi lên cấp trong trận
+│   ├── progression/quests.ts   # Nhiệm vụ ngày và 13 thành tích
+│   └── progression/shop.ts     # Mua, nâng cấp, mang/tháo vũ khí và trang bị
+│
+├── infrastructure/
+│   ├── network/net-client.ts   # NetClient WebSocket: kết nối, phân phát tin nhắn, relay dữ liệu trận
+│   ├── persistence/save-repository.ts      # Lưu/tải tiến trình (có làm sạch dữ liệu)
+│   ├── persistence/settings-repository.ts  # Âm lượng, zoom camera
+│   ├── audio/sfx-engine.ts     # Hiệu ứng âm thanh tổng hợp bằng WebAudio
+│   └── audio/ambience-engine.ts # Âm nền riêng cho từng bản đồ
+│
+├── rendering/
+│   ├── primitives/shapes.ts    # Hàm dựng khối cơ bản (box, sph, cyl, cone, mat...)
+│   ├── models/models.ts        # Facade re-export các bộ dựng mô hình
+│   ├── characters/human-model.ts # Rig người: thân, đầu, tay, chân, mũ, áo choàng
+│   ├── weapons/weapon-models.ts  # Dép lào, ghế nhựa, nón lá, chổi chít, muôi canh, lợn, điếu cày
+│   ├── items/item-models.ts    # Đạn, đồng vàng, bánh chưng
+│   ├── items/gear-models.ts    # Mô hình 3D trang bị và gắn vào rig
+│   ├── monsters/monster-models.ts # Rig quái vật, voi chiến
+│   ├── loaders/glb-avatar.ts   # Nạp model .glb tùy chọn theo public/models/manifest.json
+│   ├── biomes/biomes.ts        # 8 bản đồ và cách xoay vòng theo màn
+│   ├── world/world-kit.ts      # Tiện ích thế giới: ARENA_R, rng, texture trống đồng, nhà sàn
+│   ├── world/arena-world.ts    # Thế giới đấu trường (ánh sáng, sương, thời tiết) và nền sảnh
+│   ├── world/lobby-dioramas.ts # Bối cảnh lịch sử 3D ở sảnh theo từng tướng
+│   ├── fx/eskill-fx.ts         # Hiệu ứng kỹ năng E và vòng ngắm kiểu MOBA
+│   ├── fx/vfx-textures.ts      # Texture canvas cho hiệu ứng (glow, sóng xung kích, khói...)
+│   ├── fx/hazards.ts           # Mối nguy của chế độ vô tận (từ màn 21)
+│   └── shaders/                # Shader nước, tan biến, Fresnel và đầm lầy Ngô Quyền
+│
+├── game/
+│   ├── arena.ts                # Điều phối trận: input, chiêu thức, AI quái, đạn, đợt quái, sự kiện bản đồ, lên cấp, đồng bộ mạng
+│   ├── types.ts                # Kiểu dữ liệu trận (Actor, Mon, Proj, Snap, Hud...)
+│   ├── camera/arena-camera.ts  # Camera nhìn xuống, zoom, rung màn hình
+│   └── systems/                # DropSystem (vàng, bánh chưng) và MinimapRenderer
+│
+└── ui/
+    ├── screens/hud.ts          # HUD trong trận, sảnh, cửa hàng, nhiệm vụ, cài đặt, các hộp thoại
+    ├── screens/online-modal.ts # Kết nối, sảnh ghép trận, phòng chờ, chat, mời bạn bằng ID
+    ├── screens/lobby-scene.ts  # Cảnh 3D sảnh chờ: bệ trống đồng và tướng xem trước
+    ├── screens/shop-hero-stage.ts # Sân khấu 3D xoay 360° trong cửa hàng trang bị
+    ├── screens/loading-screen.ts  # Màn hình loading và mẹo chơi
+    ├── input/touch-controls.ts # Joystick ảo, nút cảm ứng, chụm hai ngón để zoom
+    └── styles/game.css         # Toàn bộ stylesheet
 ```
 
 ---
 
-## Chi Tiết Các Phân Hệ
+## Luồng chính
 
-### 1. Phân hệ Core & Vòng lặp trận đấu
-* **`main.ts`**: Điểm bắt đầu của ứng dụng trình duyệt. Thiết lập WebGLRenderer, lắng nghe sự kiện cửa sổ, điều khiển trạng thái giữa màn sảnh (`lobby`) và đấu trường (`arena`).
-* **`arena.ts`**: Mô-đun lớn nhất (~4.100 dòng code), chứa toàn bộ logic chiến đấu thời gian thực:
-  * Khởi tạo và cập nhật trạng thái người chơi, đồng đội và quái vật.
-  * Tính toán đạn đạo (`proj`), tầm đánh, chiêu thức đặc biệt (Q, E, Đánh thường, Lướt).
-  * Kiểm tra va chạm hình học không gian, rơi vàng/kinh nghiệm/hồi máu.
-  * Quản lý tiến trình các đợt sóng (`waves`), triệu hồi Boss và kết thúc trận.
-* **`arenaTypes.ts`**: Các interface dữ liệu phục vụ render và mô phỏng mạng.
-
-### 2. Phân hệ Mạng & Nhiều người chơi
-* **`net.ts`**: Đóng gói lớp `NetClient`. Cung cấp kết nối WebSocket an toàn, chuẩn hóa địa chỉ máy chủ (`normalizeServerUrl`), tự động kết nối lại và xử lý chuyển tiếp gói tin đồng bộ (`relay`).
-* **`online.ts`**: Giao diện người dùng nhiều người chơi:
-  * Hiển thị danh sách phòng và bảng xếp hạng trực tuyến.
-  * Quản lý ID bạn bè (`HV-XXXX`) và xác thực bằng `secret` token được lưu trữ trong `localStorage`.
-  * Hộp thoại nhận lời mời (tự động ẩn khi người chơi đang trong trận đấu đơn hoặc nhiều người để tránh gây gián đoạn).
-
-### 3. Phân hệ Dữ liệu & Tiến trình
-* **`data.ts`**: Nơi cấu hình thông số cân bằng game: 9 danh tướng (Trần Hưng Đạo, Quang Trung, Lê Lợi, Bà Triệu, Hai Bà Trưng, Ngô Quyền, Lý Thường Kiệt, Đinh Bộ Lĩnh, Nguyễn Trung Trực), 7 loại vũ khí dân gian, bảng chỉ số quái vật và các combo tướng - vũ khí.
-* **`cards.ts` & `shop.ts`**: Cơ chế roguelike nâng cấp sức mạnh tạm thời trong trận và mua sắm trang bị cố định.
-* **`save.ts` & `stats.ts`**: Lưu trữ tiến trình mở khóa tướng, tiền vàng, cấp độ trang bị và tính toán ra chỉ số thực chiến.
-
-### 4. Phân hệ Đồ họa 3D & Thế giới
-* **`models.ts`**: Tạo dựng toàn bộ nhân vật và vật phẩm bằng các hình khối Three.js nguyên thủy (Box, Sphere, Cylinder) với phong cách low-poly tối ưu hiệu năng cao cho cả thiết bị di động.
-* **`biomes.ts` & `world.ts`**: Quản lý môi trường sàn đấu thay đổi liên tục qua các màn chơi, bao gồm màu sương mù, góc chiếu ánh sáng mặt trời và thời tiết.
-
-### 5. Phân hệ Giao diện & Điều khiển
-* **`ui.ts` & `arena3d.css`**: Giao diện hiển thị đè lên canvas Three.js, bố cục responsive hỗ trợ từ màn hình máy tính lớn đến điện thoại xoay ngang/dọc.
-* **`touch.ts`**: Xử lý chạm đa điểm (multi-touch), tạo cần điều khiển joystick mượt mà cho trải nghiệm mobile hoàn chỉnh.
+* **Vòng lặp:** `main.ts` gọi `lobby.update` hoặc `arena.update` mỗi khung hình rồi render cảnh tương ứng.
+* **Một trận:** `Arena.start` tạo người chơi, `nextWave` lấy thành phần quái từ `waveComposition` theo bản đồ của màn (`biomeIndexForWave`). Cứ 5 màn có boss xoay vòng Rồng Lửa, Titan Đá, Vua Xương. Từ màn 21 mỗi màn thêm một mối nguy.
+* **Chơi cùng bạn bè:** chủ phòng chạy toàn bộ mô phỏng (`updateSim`) và gửi bản chụp 15 lần mỗi giây (`buildSnap`). Máy khách chỉ gửi thao tác (`k: 'in'`) và nội suy hiển thị (`applySnap`, `applyEvent`).
+* **Tiến trình:** vàng, vũ khí, trang bị, nhiệm vụ và thành tích lưu trong localStorage qua `save-repository.ts`.

@@ -3,6 +3,7 @@
  * Khi dùng cảm ứng, đòn đánh tự nhắm vào quái gần nhất. Mở ?touch=1 trên URL để bật thử trên máy tính.
  */
 import { saveSettings, settings } from '../../infrastructure/persistence/settings-repository';
+import { GAME_CONSTANTS } from '../../config/game-constants';
 
 export const touch = {
   /** Thiết bị có cảm ứng (hoặc ép bật bằng ?touch=1). */
@@ -39,7 +40,7 @@ function setupPinch(): void {
       e.preventDefault();
       const d = dist(e);
       if (d < 1) return;
-      settings.zoom = Math.max(9, Math.min(36, settings.zoom * (last / d)));
+      settings.zoom = Math.max(GAME_CONSTANTS.CAMERA_ZOOM_MIN, Math.min(GAME_CONSTANTS.CAMERA_ZOOM_MAX, settings.zoom * (last / d)));
       last = d;
       touch.lastUse = performance.now();
     },
