@@ -388,10 +388,10 @@ export function createHud(): HudApi {
         deck.innerHTML = '<span class="deck-empty">Chưa có nâng cấp</span>';
         return;
       }
-      const parts = text.split(' • ').map((s) => s.trim()).filter(Boolean);
+      const parts = text.split(' · ').map((s) => s.trim()).filter(Boolean);
       deck.innerHTML = parts
         .map((p) => {
-          const isCombo = p.startsWith('Combo:');
+          const isCombo = p.startsWith('Combo ');
           const isEvo = p.includes('tiến hóa');
           const icon = isCombo ? '⚡ ' : isEvo ? '✨ ' : '🔰 ';
           const cls = isCombo ? 'combo' : isEvo ? 'evo' : 'card';
@@ -1029,9 +1029,9 @@ export function showSkillDetailsModal(save: Save3D): void {
             <div class="skill-card-top-row">
               <span class="skill-badge-tag dash">LƯỚT NÉ</span>
               <b class="skill-card-name">Lướt Né Tránh</b>
-              <span class="skill-cd-badge">⏱ 1.2s</span>
+              <span class="skill-cd-badge">⏱ 2.2s</span>
             </div>
-            <div class="skill-card-desc">Lao nhanh theo hướng di chuyển, lướt qua quái vật và miễn nhiễm mọi sát thương trong 0.25 giây.</div>
+            <div class="skill-card-desc">Lao nhanh theo hướng di chuyển, lướt qua quái vật và miễn nhiễm mọi sát thương trong 0.35 giây.</div>
           </div>
         </div>
 
@@ -1212,8 +1212,8 @@ export class LobbyUI {
           <div class="ctrl-popover hidden" id="ctrl-popover">
             <div class="ctrl-popover-title">Thao tác chiến đấu</div>
             <div class="ctrl-row"><kbd>WASD</kbd><span>Di chuyển</span></div>
-            <div class="ctrl-row"><kbd>Chuột trái / Space</kbd><span>Tấn công</span></div>
-            <div class="ctrl-row"><kbd>Shift</kbd><span>Lướt né đòn</span></div>
+            <div class="ctrl-row"><kbd>Chuột trái</kbd><span>Tấn công</span></div>
+            <div class="ctrl-row"><kbd>Shift / Space</kbd><span>Lướt né đòn</span></div>
             <div class="ctrl-row"><kbd>E</kbd><span>Kỹ năng phụ</span></div>
             <div class="ctrl-row"><kbd>Q</kbd><span>Chiêu cuối</span></div>
             <div class="ctrl-row"><kbd>Cuộn chuột</kbd><span>Thu phóng góc nhìn</span></div>
@@ -1361,7 +1361,8 @@ export class LobbyUI {
 
 let modalCardsPaused = false;
 
-export function showModal(html: string): HTMLElement {
+/** locked: modal chỉ đóng bằng nút của nó (Esc và bấm nền không đóng), dùng cho bảng kết thúc trận. */
+export function showModal(html: string, locked = false): HTMLElement {
   const m = $('modal');
   const cards = $('cards');
   if (cards && !cards.classList.contains('hidden')) {
@@ -1369,8 +1370,9 @@ export function showModal(html: string): HTMLElement {
     cards.classList.add('paused-hidden');
   }
   m.innerHTML = `<div class="modal-card">${html}</div>`;
+  m.dataset.locked = locked ? '1' : '';
   m.onclick = (e) => {
-    if (e.target === m) hideModal();
+    if (e.target === m && !locked) hideModal();
   };
   m.classList.remove('hidden');
   return m.firstElementChild as HTMLElement;
@@ -1379,7 +1381,7 @@ export function showModal(html: string): HTMLElement {
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     const m = $('modal');
-    if (m && !m.classList.contains('hidden')) {
+    if (m && !m.classList.contains('hidden') && !m.dataset.locked) {
       hideModal();
     }
   }
@@ -1393,6 +1395,7 @@ export function hideModal(): void {
   const m = $('modal');
   m.classList.add('hidden');
   m.innerHTML = '';
+  m.dataset.locked = '';
   m.onclick = null;
   if (modalCardsPaused) {
     modalCardsPaused = false;
@@ -1447,7 +1450,7 @@ export function showGameOver(r: RunResult, save: Save3D, cb: { onAgain(): void; 
       <div><small>Tổng vàng</small><b>${fmt(save.gold)}</b></div>
     </div>
     <p class="over-note">Dùng vàng để mua trang bị ở sảnh rồi quay lại mạnh hơn.</p>
-    <div class="modal-actions"><button class="btn big" id="o-again">Chơi lại ngay</button><button class="btn gold" id="o-lobby">Về sảnh mua trang bị</button></div>`);
+    <div class="modal-actions"><button class="btn big" id="o-again">Chơi lại ngay</button><button class="btn gold" id="o-lobby">Về sảnh mua trang bị</button></div>`, true);
   card.querySelector('#o-again')!.addEventListener('click', () => cb.onAgain());
   card.querySelector('#o-lobby')!.addEventListener('click', () => cb.onLobby());
 }
@@ -1462,7 +1465,7 @@ function showTeamOver(r: RunResult, save: Save3D, cb: { onLobby(): void; onRoom?
       <div><small>Tổng vàng</small><b>${fmt(save.gold)}</b></div>
     </div>
     <p class="over-note">Trận có ${r.players} người chơi. Vàng bạn nhặt được đã được lưu vào tài khoản của bạn.</p>
-    <div class="modal-actions"><button class="btn big" id="o-room">Về phòng chờ</button><button class="btn gold" id="o-lobby">Về sảnh mua trang bị</button></div>`);
+    <div class="modal-actions"><button class="btn big" id="o-room">Về phòng chờ</button><button class="btn gold" id="o-lobby">Về sảnh mua trang bị</button></div>`, true);
   card.querySelector('#o-room')!.addEventListener('click', () => cb.onRoom?.());
   card.querySelector('#o-lobby')!.addEventListener('click', () => cb.onLobby());
 }

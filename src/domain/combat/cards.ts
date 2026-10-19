@@ -24,7 +24,7 @@ export const CARDS: Card[] = [
 
   // 2. Nhóm nâng cấp kỹ năng E, Lướt, Q chuyên sâu
   { id: 'khai_son', name: 'Khai Sơn Trận (Kỹ Năng E)', desc: 'Kỹ năng E hồi nhanh hơn 20% và tăng 25% uy lực sát thương.', max: 4, apply: (s) => { s.eCdMul = (s.eCdMul ?? 1) * 0.8; s.eDmgMul = (s.eDmgMul ?? 1) * 1.25; } },
-  { id: 'phong_loi_bo', name: 'Phong Lôi Bộ (Lướt)', desc: 'Lướt hồi nhanh hơn 28%, tăng 15% tốc chạy trong 1.5 giây sau khi lướt.', max: 3, apply: (s) => { s.dashCdMul = (s.dashCdMul ?? 1) * 0.72; s.speed *= 1.05; } },
+  { id: 'phong_loi_bo', name: 'Phong Lôi Bộ (Lướt)', desc: 'Lướt hồi nhanh hơn 28% và +5% tốc độ chạy.', max: 3, apply: (s) => { s.dashCdMul = (s.dashCdMul ?? 1) * 0.72; s.speed *= 1.05; } },
   { id: 'cuong_chien_hon', name: 'Cuồng Chiến Hồn (Q & E)', desc: 'Cả chiêu cuối Q và kỹ năng E hồi nhanh hơn 15%.', max: 4, apply: (s) => { s.ultCdMul *= 0.85; s.eCdMul = (s.eCdMul ?? 1) * 0.85; } },
   { id: 'huyet_chien', name: 'Huyết Chiến (Hút Máu)', desc: 'Đòn đánh hồi máu bằng 6% lượng sát thương gây ra.', max: 4, apply: (s) => { s.lifesteal = (s.lifesteal ?? 0) + 0.06; } },
   { id: 'tram_yeu_quy', name: 'Trảm Yêu Quyết (Chí Mạng)', desc: 'Sát thương khi nổ chí mạng tăng từ 150% lên 190%.', max: 3, apply: (s) => { s.critDmgMul = (s.critDmgMul ?? 1.5) + 0.4; } },
