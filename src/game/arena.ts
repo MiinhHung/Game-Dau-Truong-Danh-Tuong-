@@ -10,7 +10,7 @@ import { HAZARDS, HAZARD_FROM, hazardById, hazardText } from '../rendering/fx/ha
 import { applyAvatar } from '../rendering/loaders/glb-avatar';
 import { box, buildBanhChung, buildBow, buildCoin, buildElephant, buildHuman, buildMonster, buildProjectile, buildWeaponModel, cone, cyl, flashMaterials, sph, tintEvolved, trimShadowCasters, type Rig } from '../rendering/models/models';
 import { attachGearToRig } from '../rendering/items/gear-models';
-import type { PlayerInfo } from '../infrastructure/network/net-client';
+import type { Loadout, PlayerInfo } from '../infrastructure/network/net-client';
 import { loadoutOf, writeSave, type Save3D } from '../infrastructure/persistence/save-repository';
 import { sfx, resumeAudio, type SfxName } from '../infrastructure/audio/sfx-engine';
 import { computeStats, type StatSource } from '../domain/combat/stats';
@@ -470,16 +470,41 @@ export class Arena {
   /** Gọi sau khi mua hoặc đổi trang bị trong lúc tạm dừng (chỉ chơi một mình). */
   refreshLoadout(): void {
     const a = this.me;
-    const ratio = a.hp / a.stats.maxHp;
-    a.stats = computeStats(this.save);
-    // Áp lại các thẻ đã chọn trong trận, nếu không đổi trang bị lúc tạm dừng sẽ làm mất hết hiệu ứng thẻ
-    reapplyCards(a.stats, a.cards);
-    a.hp = Math.max(1, Math.min(a.stats.maxHp, ratio * a.stats.maxHp));
-    this.attachWeapon(a);
-    attachGearToRig(a.rig, this.save.equipped);
+    // Giữ nguyên tướng đang chơi: giữa trận chỉ đổi được vũ khí và trang bị
+    const lo = { ...loadoutOf(this.save), general: a.stats.general.id };
+    this.applyLoadout(a, lo);
+    // Trận online: báo cho chủ phòng (máy khách) hoặc cả phòng (chủ phòng) để chỉ số và hình vũ khí khớp nhau
+    if (this.role === 'client') this.link?.relay('host', { k: 'loadout', loadout: lo });
+    else if (this.role === 'host') this.emit(['W', a.id, JSON.stringify(lo)]);
     this.hud.setGeneral?.(a.stats.general.id);
     this.hud.setLoadout(a.stats.weapon.name + (this.evo(a) ? ' ★' : ''), a.stats.general.ult, ESKILLS[a.stats.general.id]?.name ?? '');
     this.hud.setHp(a.hp, a.stats.maxHp);
+    this.refreshChips();
+  }
+
+  /** Tính lại chỉ số từ trang bị mới (giữ thẻ đã chọn và tỉ lệ máu), đổi mô hình vũ khí và trang bị. */
+  private applyLoadout(a: Actor, lo: Loadout): void {
+    const ratio = a.hp / Math.max(1, a.stats.maxHp);
+    a.loadout = lo;
+    a.stats = computeStats(lo);
+    // Áp lại các thẻ đã chọn trong trận, nếu không đổi trang bị giữa trận sẽ làm mất hết hiệu ứng thẻ
+    reapplyCards(a.stats, a.cards);
+    if (this.role !== 'client' || a.local) a.hp = Math.max(1, Math.min(a.stats.maxHp, ratio * a.stats.maxHp));
+    this.attachWeapon(a);
+    attachGearToRig(a.rig, lo.equipped);
+    trimShadowCasters(a.root);
+  }
+
+  /** Kiểm tra trang bị nhận qua mạng; dữ liệu lạ thì bỏ qua. Tướng luôn giữ như lúc vào trận. */
+  private parseLoadout(raw: unknown, general: string): Loadout | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const r = raw as Record<string, unknown>;
+    if (typeof r.weapon !== 'string' || !r.weapons || typeof r.weapons !== 'object' || !r.equipped || typeof r.equipped !== 'object') return null;
+    const weapons: Record<string, number> = {};
+    for (const [k, v] of Object.entries(r.weapons as Record<string, unknown>)) if (typeof v === 'number' && Number.isFinite(v)) weapons[k] = Math.max(0, Math.min(MAX_WEAPON_LEVEL, Math.floor(v)));
+    const eq = r.equipped as Record<string, unknown>;
+    const slot = (k: string): string | null => (typeof eq[k] === 'string' ? (eq[k] as string) : null);
+    return { general, weapon: r.weapon, weapons, equipped: { head: slot('head'), body: slot('body'), feet: slot('feet'), charm: slot('charm') } };
   }
 
   resize(w: number, h: number): void {
@@ -3590,6 +3615,16 @@ export class Arena {
       if (a && a.alive && i >= 0 && i < EMOTES.length) this.popAt(a.pos, EMOTES[i], 'crit', 3.9);
       return;
     }
+    if (this.role === 'host' && d.k === 'loadout') {
+      const a = this.actors.get(from);
+      const lo = a && !a.local ? this.parseLoadout(d.loadout, a.stats.general.id) : null;
+      if (a && lo) {
+        this.applyLoadout(a, lo);
+        this.emit(['W', a.id, JSON.stringify(lo)]);
+        this.syncTeam();
+      }
+      return;
+    }
     if (this.role === 'host' && d.k === 'card') {
       const a = this.actors.get(from);
       if (a && !a.local && typeof d.i === 'number') this.chooseCard(a, d.i);
@@ -3880,6 +3915,19 @@ export class Arena {
       case 'M': this.startMood(String(ev[1]), ev[2] as number); break;
       case 'L': {
         if (String(ev[1]) === me.id) this.presentOffer(ev.slice(2).map(String));
+        break;
+      }
+      case 'W': {
+        // Một người chơi khác đổi vũ khí hoặc trang bị giữa trận
+        const a = this.actors.get(String(ev[1]));
+        if (a && !a.local) {
+          try {
+            const lo = this.parseLoadout(JSON.parse(String(ev[2])), a.stats.general.id);
+            if (lo) this.applyLoadout(a, lo);
+          } catch {
+            /* dữ liệu hỏng: bỏ qua */
+          }
+        }
         break;
       }
       case 'C': {

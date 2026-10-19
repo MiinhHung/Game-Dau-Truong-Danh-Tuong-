@@ -1429,23 +1429,34 @@ export function hideModal(): void {
   }
 }
 
-export function showPause(save: Save3D, cb: { onResume(): void; onExit(): void; onLoadout(): void }): void {
+interface ShopModalOpts {
+  title: string;
+  note?: string;
+  /** Các nút ở cuối hộp thoại; nút đầu tiên là nút chính. */
+  actions: { label: string; onClick(): void }[];
+  /** Gọi sau mỗi lần mua, nâng cấp hoặc đổi vũ khí, trang bị thành công. */
+  onLoadout(): void;
+}
+
+/** Hộp thoại có tab Cửa hàng trang bị / Vũ khí / Cài đặt, dùng cho tạm dừng, menu trận online và phòng chờ. */
+export function showShopModal(save: Save3D, o: ShopModalOpts): void {
   let tab: 'weapon' | 'shop' | 'setting' = 'shop';
   const draw = (): void => {
     const isShop = tab === 'shop';
     const card = showModal(`
-      <h2>Tạm dừng</h2>
+      <h2>${escapeHtml(o.title)}</h2>
+      ${o.note ? `<p class="over-note">${escapeHtml(o.note)}</p>` : ''}
       <div class="gold-chip">Vàng ${fmt(save.gold)}</div>
       <nav class="tabs"><button data-t="shop" class="${isShop ? 'on' : ''}">Cửa hàng trang bị</button><button data-t="weapon" class="${tab === 'weapon' ? 'on' : ''}">Vũ khí</button><button data-t="setting" class="${tab === 'setting' ? 'on' : ''}">Cài đặt</button></nav>
       <div class="list modal-list ${isShop ? 'shop-mode' : ''}" id="modal-list"></div>
-      <div class="modal-actions"><button class="btn big" id="m-resume">Tiếp tục chiến đấu</button><button class="btn" id="m-exit">Về sảnh</button></div>`);
+      <div class="modal-actions">${o.actions.map((a, i) => `<button class="btn ${i === 0 ? 'big' : ''}" data-action="${i}">${escapeHtml(a.label)}</button>`).join('')}</div>`);
     if (isShop) card.classList.add('shop-modal');
     else card.classList.remove('shop-modal');
     const list = card.querySelector<HTMLElement>('#modal-list')!;
     const hooks: PanelHooks = {
       save,
       onChange: (_k, r) => {
-        if (r?.ok) cb.onLoadout();
+        if (r?.ok) o.onLoadout();
         draw();
       },
     };
@@ -1458,10 +1469,20 @@ export function showPause(save: Save3D, cb: { onResume(): void; onExit(): void; 
         draw();
       }),
     );
-    card.querySelector('#m-resume')!.addEventListener('click', () => cb.onResume());
-    card.querySelector('#m-exit')!.addEventListener('click', () => cb.onExit());
+    card.querySelectorAll<HTMLButtonElement>('[data-action]').forEach((b) => b.addEventListener('click', () => o.actions[Number(b.dataset.action)].onClick()));
   };
   draw();
+}
+
+export function showPause(save: Save3D, cb: { onResume(): void; onExit(): void; onLoadout(): void }): void {
+  showShopModal(save, {
+    title: 'Tạm dừng',
+    actions: [
+      { label: 'Tiếp tục chiến đấu', onClick: () => cb.onResume() },
+      { label: 'Về sảnh', onClick: () => cb.onExit() },
+    ],
+    onLoadout: () => cb.onLoadout(),
+  });
 }
 
 export function showGameOver(r: RunResult, save: Save3D, cb: { onAgain(): void; onLobby(): void; onRoom?(): void }): void {
@@ -1495,11 +1516,14 @@ function showTeamOver(r: RunResult, save: Save3D, cb: { onLobby(): void; onRoom?
   card.querySelector('#o-lobby')!.addEventListener('click', () => cb.onLobby());
 }
 
-export function showOnlineMenu(cb: { onResume(): void; onLeave(): void }): void {
-  const card = showModal(`
-    <h2>Menu</h2>
-    <p class="over-note">Trận nhiều người không dừng lại khi bạn mở menu. Dùng phím Enter để chat với đồng đội.</p>
-    <div class="modal-actions"><button class="btn big" id="m-resume">Tiếp tục chiến đấu</button><button class="btn" id="m-leave">Rời trận</button></div>`);
-  card.querySelector('#m-resume')!.addEventListener('click', () => cb.onResume());
-  card.querySelector('#m-leave')!.addEventListener('click', () => cb.onLeave());
+export function showOnlineMenu(save: Save3D, cb: { onResume(): void; onLeave(): void; onLoadout(): void }): void {
+  showShopModal(save, {
+    title: 'Menu',
+    note: 'Trận nhiều người không dừng lại khi bạn mở menu. Nên mua đồ lúc nghỉ giữa các màn. Nhấn Enter để chat với đồng đội.',
+    actions: [
+      { label: 'Tiếp tục chiến đấu', onClick: () => cb.onResume() },
+      { label: 'Rời trận', onClick: () => cb.onLeave() },
+    ],
+    onLoadout: () => cb.onLoadout(),
+  });
 }

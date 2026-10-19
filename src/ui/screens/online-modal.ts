@@ -2,7 +2,7 @@ import { GENERALS, WEAPONS } from '../../domain/data';
 import { CODE_RE, FIXED_SERVER, defaultServerUrl, normalizeServerUrl, type ChatMsg, type NetClient, type PlayerInfo, type RoomInfo, type RoomSummary } from '../../infrastructure/network/net-client';
 import { loadoutOf, writeSave, type Save3D } from '../../infrastructure/persistence/save-repository';
 import { sfx } from '../../infrastructure/audio/sfx-engine';
-import { escapeHtml } from './hud';
+import { escapeHtml, hideModal, showShopModal } from './hud';
 import { STORAGE_KEYS } from '../../config/storage-keys';
 
 const NAME_KEY = STORAGE_KEYS.PLAYER_NAME;
@@ -410,6 +410,7 @@ export class OnlineUI {
             <label class="field">Tướng<select id="sel-general"></select></label>
             <label class="field">Vũ khí<select id="sel-weapon"></select></label>
           </div>
+          <button class="btn gold" id="btn-shop">Cửa hàng &amp; Vũ khí (mua, nâng cấp, trang bị)</button>
           <div class="room-actions" id="room-actions"></div>
         </section>
         <section class="panel col">
@@ -444,6 +445,7 @@ export class OnlineUI {
       writeSave(this.h.save);
       this.h.net.send({ t: 'loadout', loadout: loadoutOf(this.h.save) });
     });
+    $('btn-shop').addEventListener('click', () => this.openShop());
     this.bindIdBox();
     this.bindChatForm();
     this.updateRoom();
@@ -482,6 +484,24 @@ export class OnlineUI {
       actions.innerHTML = `<button class="btn ${me?.ready ? '' : 'gold'} big" id="btn-ready">${me?.ready ? 'Hủy sẵn sàng' : 'Sẵn sàng'}</button>`;
       $('btn-ready').addEventListener('click', () => this.h.net.send({ t: 'ready', v: !me?.ready }));
     }
+  }
+
+  /** Cửa hàng trong phòng chờ: mua xong thì gửi trang bị mới cho máy chủ để mọi người thấy và trận sau dùng đúng chỉ số. */
+  private openShop(): void {
+    showShopModal(this.h.save, {
+      title: 'Cửa hàng',
+      note: 'Đồ mua ở đây dùng được ngay trong trận kế tiếp với bạn bè.',
+      actions: [
+        {
+          label: 'Xong',
+          onClick: () => {
+            hideModal();
+            if (this.view === 'room' && this.visible) this.buildRoom();
+          },
+        },
+      ],
+      onLoadout: () => this.h.net.send({ t: 'loadout', loadout: loadoutOf(this.h.save) }),
+    });
   }
 
   /* ---------- ID bạn bè và lời mời ---------- */

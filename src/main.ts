@@ -189,7 +189,7 @@ function openPause(): void {
   if (mode !== 'arena' || paused) return;
   paused = true;
   if (onlineRun) {
-    showOnlineMenu({ onResume: () => closePause(), onLeave: () => leaveOnline() });
+    showOnlineMenu(save, { onResume: () => closePause(), onLeave: () => leaveOnline(), onLoadout: () => arena.refreshLoadout() });
     return;
   }
   arena.setPaused(true);
