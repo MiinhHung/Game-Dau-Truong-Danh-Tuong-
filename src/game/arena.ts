@@ -8,7 +8,7 @@ import { checkAchievements, ensureQuests, questAdd } from '../domain/progression
 import { ambience } from '../infrastructure/audio/ambience-engine';
 import { HAZARDS, HAZARD_FROM, hazardById, hazardText } from '../rendering/fx/hazards';
 import { applyAvatar } from '../rendering/loaders/glb-avatar';
-import { box, buildBanhChung, buildBow, buildCoin, buildElephant, buildHuman, buildMonster, buildProjectile, buildWeaponModel, cone, cyl, flashMaterials, sph, tintEvolved, type Rig } from '../rendering/models/models';
+import { box, buildBanhChung, buildBow, buildCoin, buildElephant, buildHuman, buildMonster, buildProjectile, buildWeaponModel, cone, cyl, flashMaterials, sph, tintEvolved, trimShadowCasters, type Rig } from '../rendering/models/models';
 import { attachGearToRig } from '../rendering/items/gear-models';
 import type { PlayerInfo } from '../infrastructure/network/net-client';
 import { loadoutOf, writeSave, type Save3D } from '../infrastructure/persistence/save-repository';
@@ -19,6 +19,7 @@ import { createWaterShaderMaterial } from '../rendering/shaders/water-shader';
 import { createDissolveMaterial } from '../rendering/shaders/dissolve-shader';
 import { getSoftGlowTex, getShockwaveRingTex, getSmokePuffTex, getSpiritPetalTex } from '../rendering/fx/vfx-textures';
 import { AimIndicator, makeESkillFx } from '../rendering/fx/eskill-fx';
+import { ParticlePool } from '../rendering/fx/particle-pool';
 import { BIOMES, biomeIndexForWave } from '../rendering/biomes/biomes';
 import { ARENA_R, buildArenaWorld, type ArenaWorld } from '../rendering/world/arena-world';
 import { MinimapRenderer } from './systems/minimap-renderer';
@@ -308,7 +309,7 @@ export class Arena {
   private plane = new THREE.Plane(UP, 0);
 
   private coinTemplate = buildCoin();
-  private partGeo = new THREE.PlaneGeometry(0.3, 0.3);
+  private particles = new ParticlePool(this.scene);
   private partMats = new Map<number, THREE.MeshBasicMaterial>();
   private barGeo = new THREE.PlaneGeometry(1.4, 0.14);
   private barBg = new THREE.MeshBasicMaterial({ color: 0x120c08, depthTest: false, transparent: true });
@@ -329,6 +330,57 @@ export class Arena {
   }
 
   /* ---------- Vòng đời ---------- */
+
+  private warmed = false;
+
+  /**
+   * Biên dịch trước shader của mọi loại quái, đạn và hiệu ứng (gọi lúc màn loading còn che màn hình).
+   * Không làm vậy thì lần đầu mỗi thứ xuất hiện, trình duyệt dừng 100 đến 800ms để biên dịch và game bị khựng.
+   * Vật liệu ở đây cố ý không dispose để shader còn được giữ lại cho cả phiên chơi.
+   */
+  prewarm(renderer: THREE.WebGLRenderer, render: () => void): void {
+    const warm = new THREE.Group();
+    const add = (o: THREE.Object3D, x = 0): void => {
+      o.position.set(x, 0, 0);
+      warm.add(o);
+    };
+    if (!this.warmed) {
+      MON_TYPES.forEach((t, i) => add(buildMonster(t).group, i * 3));
+      for (const v of VIS) add(buildProjectile(v));
+      add(buildCoin());
+      add(buildBanhChung());
+      add(buildElephant(true));
+      add(buildElephant(false));
+      add(buildSwamp(1, 4));
+      // Quái tan biến: có và không có màu đỉnh
+      const colored = new THREE.BoxGeometry(1, 1, 1).toNonIndexed();
+      colored.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colored.attributes.position.count * 3).fill(1), 3));
+      add(new THREE.Mesh(colored, createDissolveMaterial(0xffffff, 0xff5500, true)));
+      add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), createDissolveMaterial(0xffffff, 0xff5500, false)));
+      add(new THREE.Mesh(new THREE.PlaneGeometry(1, 1), createWaterShaderMaterial()));
+      // Vòng sóng, vùng cảnh báo và cọc đầm lầy
+      add(new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: getShockwaveRingTex(), transparent: true, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })));
+      add(new THREE.Mesh(new THREE.CircleGeometry(1, 8), new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide })));
+      add(new THREE.Mesh(new THREE.ConeGeometry(0.2, 1, 6), this.partMat(0x8a5a2a)));
+      this.warmed = true;
+    }
+    // Hiệu ứng chiêu E của tướng đang chơi (mỗi tướng dùng vài shader riêng)
+    const fxScene = new THREE.Scene();
+    for (const a of this.actors.values()) {
+      const fx = makeESkillFx(a.stats.general.id, fxScene, 0, 0, 1, 0, 0);
+      fx?.update(0.5, 0.016);
+    }
+    warm.add(...fxScene.children);
+    // Vẽ thật một lần (kể cả pass bóng): trên Windows, ANGLE còn dịch shader sang Direct3D ở lần vẽ đầu tiên,
+    // renderer.compile() không chạm tới bước đó. Đặt dưới đất và tắt cắt khung nhìn để người chơi không thấy.
+    warm.position.set(0, -500, 0);
+    warm.traverse((o) => (o.frustumCulled = false));
+    this.scene.add(warm);
+    renderer.compile(this.scene, this.camera);
+    render();
+    this.scene.remove(warm);
+    warm.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+  }
 
   start(save: Save3D, opts?: StartOpts): void {
     this.save = save;
@@ -465,6 +517,7 @@ export class Arena {
     this.armies = [];
     this.coins = [];
     this.fxs = [];
+    this.particles.clear();
     this.timers = [];
     this.queue = [];
     this.monViews.clear();
@@ -687,6 +740,7 @@ export class Arena {
     };
     this.attachWeapon(a);
     attachGearToRig(a.rig, src.equipped);
+    trimShadowCasters(root);
     root.position.copy(a.pos);
     return a;
   }
@@ -955,7 +1009,10 @@ export class Arena {
     const rig = buildHuman(GENERALS.find((g) => g.id === 'tran_hung_dao')!.look);
     rig.group.traverse((o) => {
       const mesh = o as THREE.Mesh;
-      if (mesh.isMesh) mesh.material = ghost;
+      if (!mesh.isMesh) return;
+      mesh.material = ghost;
+      // Hồn ma bán trong suốt không cần đổ bóng; 21 lính × ~30 mảnh sẽ thêm hàng trăm lệnh vẽ
+      mesh.castShadow = false;
     });
     rig.armR.rotation.x = -1.25;
     rig.armL.rotation.x = 0.5;
@@ -993,7 +1050,6 @@ export class Arena {
       },
       end: () => {
         for (const s of soldiers) this.scene.remove(s.g);
-        ghost.dispose();
       },
     });
   }
@@ -1245,7 +1301,6 @@ export class Arena {
       end: () => {
         for (const s of body) this.scene.remove(s);
         this.scene.remove(head, beam, sword);
-        gold.dispose();
       },
     });
   }
@@ -1500,10 +1555,6 @@ export class Arena {
         s.group.traverse((o) => {
           const mesh = o as THREE.Mesh;
           if (mesh.geometry) mesh.geometry.dispose();
-          if (mesh.material) {
-            if (Array.isArray(mesh.material)) mesh.material.forEach((m) => m.dispose());
-            else mesh.material.dispose();
-          }
         });
       }
     }
@@ -1754,7 +1805,7 @@ export class Arena {
             baseCol = mCol.getHex();
           }
         }
-        const dMat = createDissolveMaterial(baseCol, edgeCol);
+        const dMat = createDissolveMaterial(baseCol, edgeCol, !!meshChild.geometry.getAttribute('color'));
         dissolveMats.push(dMat);
         meshChild.material = dMat;
       }
@@ -1778,10 +1829,12 @@ export class Arena {
         }
       },
       end: () => {
-        for (const mat of dissolveMats) {
-          mat.dispose();
-        }
         this.scene.remove(g);
+        // Giải phóng geometry riêng của con quái (trừ thanh máu dùng chung), giữ vật liệu để shader không phải biên dịch lại
+        g.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          if (mesh.isMesh && mesh.geometry !== this.barGeo) mesh.geometry.dispose();
+        });
       },
     });
   }
@@ -2074,30 +2127,7 @@ export class Arena {
   }
 
   private fxBurst(x: number, y: number, z: number, color: number, n: number, speed: number, size: number): void {
-    if (this.fxs.length > 260) return;
-    for (let i = 0; i < n; i++) {
-      const mesh = new THREE.Mesh(this.partGeo, this.partMat(color));
-      mesh.position.set(x, y, z);
-      mesh.scale.setScalar(size * (0.6 + Math.random() * 0.8));
-      const v = new THREE.Vector3((Math.random() - 0.5) * 2, Math.random() * 1.4 + 0.2, (Math.random() - 0.5) * 2).normalize().multiplyScalar(speed * (0.4 + Math.random() * 0.8));
-      this.scene.add(mesh);
-      this.fxs.push({
-        t: 0,
-        dur: 0.45 + Math.random() * 0.4,
-        update: (k, dt) => {
-          v.y -= 18 * dt;
-          mesh.position.addScaledVector(v, dt);
-          if (mesh.position.y < 0.07) {
-            mesh.position.y = 0.07;
-            v.multiplyScalar(0.4);
-            v.y = Math.abs(v.y) * 0.3;
-          }
-          mesh.quaternion.copy(this.camera.quaternion);
-          mesh.scale.multiplyScalar(Math.max(0.01, 1 - dt * 1.6 * k));
-        },
-        end: () => this.scene.remove(mesh),
-      });
-    }
+    this.particles.burst(x, y, z, color, n, speed, size);
   }
 
   /** Hiệu ứng riêng của kỹ năng E từng tướng, chạy ở máy này và phát cho đồng đội. */
@@ -2155,7 +2185,6 @@ export class Arena {
       end: () => {
         this.scene.remove(mesh);
         geo.dispose();
-        m.dispose();
       },
     });
   }
@@ -4020,6 +4049,7 @@ export class Arena {
     p.dead = true;
     if (spark) this.burst(p.obj.position.clone(), 0xff8a30, 8, 5, 0.8);
     this.scene.remove(p.obj);
+    p.obj.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
   }
 
   private updateZones(dt: number): void {
@@ -4108,6 +4138,7 @@ export class Arena {
     }
     for (const f of this.fxs) if (f.t >= f.dur) f.end();
     this.fxs = this.fxs.filter((f) => f.t < f.dur);
+    this.particles.update(dt, this.camera.quaternion);
   }
 
   private syncTeam(): void {
@@ -4303,7 +4334,6 @@ export class Arena {
         end: () => {
           this.scene.remove(line);
           geo.dispose();
-          mat.dispose();
         },
       });
     } else if (kind === 'ice') {
@@ -4333,7 +4363,6 @@ export class Arena {
         },
         end: () => {
           this.scene.remove(g);
-          iceM.dispose();
           for (const s of spikes) s.geometry.dispose();
         },
       });
@@ -4355,7 +4384,6 @@ export class Arena {
         end: () => {
           this.scene.remove(col);
           geo.dispose();
-          mt.dispose();
         },
       });
     } else if (kind === 'rock') {
@@ -4411,8 +4439,6 @@ export class Arena {
         end: () => {
           this.scene.remove(pivot);
           stalk.geometry.dispose();
-          green.dispose();
-          nodeM.dispose();
         },
       });
     } else if (kind === 'meteor') {

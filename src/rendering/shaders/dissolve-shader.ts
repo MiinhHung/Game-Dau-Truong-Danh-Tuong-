@@ -67,15 +67,22 @@ float snoise(vec3 v) {
 `;
 
 /** Tạo vật liệu Shader Tan Biến Tro Tàn (Dissolve Material) cho quái khi gục ngã. */
-export function createDissolveMaterial(baseColor: THREE.Color | number, edgeColor: number = 0xff5500): THREE.ShaderMaterial {
+/** vertexColors: mesh có màu đỉnh (quái đã gộp khối) thì nhân màu đỉnh với baseColor. */
+export function createDissolveMaterial(baseColor: THREE.Color | number, edgeColor: number = 0xff5500, vertexColors = false): THREE.ShaderMaterial {
   const col = baseColor instanceof THREE.Color ? baseColor : new THREE.Color(baseColor);
   const edge = new THREE.Color(edgeColor);
 
   const vertexShader = `
     varying vec3 vWorldPos;
     varying vec3 vNormal;
+    varying vec3 vColor;
 
     void main() {
+      #ifdef USE_COLOR
+      vColor = color;
+      #else
+      vColor = vec3(1.0);
+      #endif
       vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
       vNormal = normalize(normalMatrix * normal);
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
@@ -90,6 +97,7 @@ export function createDissolveMaterial(baseColor: THREE.Color | number, edgeColo
     uniform float uNoiseScale;
     varying vec3 vWorldPos;
     varying vec3 vNormal;
+    varying vec3 vColor;
 
     ${NOISE_GLSL}
 
@@ -103,7 +111,7 @@ export function createDissolveMaterial(baseColor: THREE.Color | number, edgeColo
 
       // Viền tro than hồng rực lửa
       float edgeFactor = smoothstep(uProgress + uEdgeWidth, uProgress, noise);
-      vec3 finalColor = mix(uColor, uEdgeColor * 2.2, edgeFactor);
+      vec3 finalColor = mix(uColor * vColor, uEdgeColor * 2.2, edgeFactor);
 
       gl_FragColor = vec4(finalColor, 1.0);
     }
@@ -120,6 +128,7 @@ export function createDissolveMaterial(baseColor: THREE.Color | number, edgeColo
     vertexShader,
     fragmentShader,
     side: THREE.DoubleSide,
+    vertexColors,
   });
 }
 

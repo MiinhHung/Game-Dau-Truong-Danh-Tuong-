@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import type { HumanSpec, MonsterType } from '../../domain/data';
-import { box, cone, cyl, mat, shadowed, sph, pivot, flashMaterials } from '../primitives/shapes';
+import { box, cone, cyl, mat, shadowed, sph, pivot, flashMaterials, trimShadowCasters } from '../primitives/shapes';
 import { buildHuman, type HumanOpts } from '../characters/human-model';
+import { mergeStaticParts } from '../primitives/merge-static';
 
 export interface MonsterRig {
   group: THREE.Group;
@@ -466,6 +467,9 @@ export function buildMonster(type: MonsterType): MonsterRig {
     default:
       rig = humanMonster({ skin: 0x888888, hair: 0, top: 0x444444, topDark: 0x222222, pants: 0x333333, boots: 0x111111, trim: 0x666666, hat: 'none', hatColor: 0 }, {}, 1);
   }
+  // Gộp các khối tĩnh để giảm lệnh vẽ; giữ nguyên các khớp và bộ phận được hoạt ảnh tham chiếu
+  mergeStaticParts(rig.group, new Set<THREE.Object3D>([rig.group, ...rig.legs, ...rig.arms, ...(rig.head ? [rig.head] : []), ...Object.values(rig.extra)]));
+  trimShadowCasters(rig.group);
   rig.mats = flashMaterials(rig.group);
   return rig;
 }

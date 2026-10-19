@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { MonsterType, RosterEntry } from '../../domain/data';
-import { box, cone, cyl, mat, sph } from '../primitives/shapes';
+import { box, cone, cyl, mat, sph, trimShadowCasters } from '../primitives/shapes';
+import { getSoftGlowTex } from '../fx/vfx-textures';
 import { ARENA_R, canvasTex, drumTexture, nhaSan, rng, type Obstacle } from '../world/world-kit';
 
 /** Một bản đồ: khung cảnh dựng sẵn, vật cản, và hàm cập nhật hiệu ứng thời tiết. update trả về độ chớp sáng 0..1 (sét). */
@@ -46,6 +47,7 @@ function ctx(seed: number): Ctx {
 }
 
 function finish(c: Ctx): BiomeScene {
+  trimShadowCasters(c.root);
   return {
     root: c.root,
     obstacles: c.obstacles,
@@ -904,7 +906,9 @@ function phongNha(): BiomeScene {
   c.root.add(pillar);
   c.obstacles.push({ x: 0, z: 0, r: 3.9 });
   const crystalMats = [0x40e0ff, 0xff60d0, 0x70ff90].map((col) => new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 1.1, flatShading: true, transparent: true, opacity: 0.92 }));
-  const lights: THREE.PointLight[] = [];
+  // Vệt sáng giả dưới chân tinh thể thay cho PointLight: đèn thật buộc mọi vật liệu biên dịch lại shader khi vào/rời bản đồ
+  // và mỗi điểm ảnh phải tính thêm 5 nguồn sáng
+  const glows: THREE.MeshBasicMaterial[] = [];
   for (let i = 0; i < 14; i++) {
     const p = i === 0 ? { x: 5, z: 1 } : spot(c, 8, ARENA_R - 4, 4);
     if (!p) continue;
@@ -921,11 +925,13 @@ function phongNha(): BiomeScene {
     g.position.set(p.x, 0, p.z);
     c.root.add(g);
     c.obstacles.push({ x: p.x, z: p.z, r: 1.4 });
-    if (i < 5) {
-      const l = new THREE.PointLight(mt.color.getHex(), 18, 30, 1.6);
-      l.position.set(p.x, 2, p.z);
-      c.root.add(l);
-      lights.push(l);
+    if (i < 8) {
+      const gm = new THREE.MeshBasicMaterial({ map: getSoftGlowTex(), color: mt.color, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending });
+      const glow = new THREE.Mesh(new THREE.PlaneGeometry(13, 13), gm);
+      glow.rotation.x = -Math.PI / 2;
+      glow.position.set(p.x, 0.05, p.z);
+      c.root.add(glow);
+      glows.push(gm);
     }
   }
   // măng đá thấp trong sân
@@ -952,7 +958,7 @@ function phongNha(): BiomeScene {
   particles(c, { n: 60, w: 70, h: 30, color: 0xcfe8ff, size: 0.12, vy: -14, opacity: 0.7 });
   c.upd.push((t) => {
     crystalMats.forEach((mt, i) => (mt.emissiveIntensity = 0.9 + Math.sin(t * 1.6 + i * 2) * 0.35));
-    lights.forEach((l, i) => (l.intensity = 14 + Math.sin(t * 1.4 + i * 1.7) * 5));
+    glows.forEach((g, i) => (g.opacity = 0.45 + Math.sin(t * 1.4 + i * 1.7) * 0.15));
   });
   return finish(c);
 }

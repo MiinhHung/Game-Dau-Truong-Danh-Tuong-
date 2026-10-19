@@ -81,11 +81,9 @@ function make(scene: THREE.Scene, dur: number, build: (g: THREE.Group) => Update
       scene.remove(g);
       g.traverse((o) => {
         const m = o as THREE.Mesh;
+        // Chỉ giải phóng geometry: dispose vật liệu cuối cùng của một loại sẽ xóa luôn shader,
+        // lần dùng chiêu sau phải biên dịch lại và game bị khựng
         if (m.geometry) m.geometry.dispose();
-        const mat = m.material as THREE.Material | undefined;
-        if (mat) {
-          mat.dispose();
-        }
       });
     },
   };

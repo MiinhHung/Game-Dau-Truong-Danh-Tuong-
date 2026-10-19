@@ -50,3 +50,20 @@ export function flashMaterials(root: THREE.Object3D): THREE.MeshStandardMaterial
   });
   return mats;
 }
+
+/**
+ * Bỏ đổ bóng cho các mảnh nhỏ (mắt, viền áo, gai, ngón...). Bóng của chúng gần như không nhìn thấy
+ * nhưng mỗi mảnh đổ bóng tốn thêm một lệnh vẽ ở pass bóng mỗi khung hình.
+ */
+export function trimShadowCasters(root: THREE.Object3D, minRadius = 0.16): void {
+  root.updateMatrixWorld(true);
+  const s = new THREE.Vector3();
+  root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh || !m.castShadow || (m as unknown as THREE.InstancedMesh).isInstancedMesh) return;
+    const g = m.geometry;
+    if (!g.boundingSphere) g.computeBoundingSphere();
+    m.getWorldScale(s);
+    if (g.boundingSphere!.radius * Math.max(s.x, s.y, s.z) < minRadius) m.castShadow = false;
+  });
+}

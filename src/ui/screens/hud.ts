@@ -8,6 +8,7 @@ import { ACHIEVEMENTS, ensureQuests, pendingAchievements, questGoal, questReward
 import { writeSave, type Save3D } from '../../infrastructure/persistence/save-repository';
 import { ShopHeroStage } from './shop-hero-stage';
 import { GENERAL_LORES } from '../../rendering/world/lobby-dioramas';
+import { QUALITY_ORDER, QUALITY_PRESETS, type QualitySetting } from '../../rendering/postfx/quality';
 
 let activeShopHeroStage: ShopHeroStage | null = null;
 
@@ -847,7 +848,10 @@ export function renderSettings(el: HTMLElement): void {
     <label class="setrow"><span>Âm hiệu ứng</span><input type="range" min="0" max="100" value="${Math.round(settings.sfx * 100)}" data-set="sfx"><b></b></label>
     <label class="setrow"><span>Nhạc nền</span><input type="range" min="0" max="100" value="${Math.round(settings.music * 100)}" data-set="music"><b></b></label>
     <label class="setrow"><span>Camera xa gần</span><input type="range" min="9" max="36" value="${Math.round(settings.zoom)}" data-set="zoom"><b></b></label>
-    <label class="setrow"><span>Hiệu ứng phát sáng</span><input type="checkbox" id="set-bloom" ${settings.bloom ? 'checked' : ''}><b>Tắt nếu máy bị giật</b></label>
+    <label class="setrow"><span>Chất lượng đồ họa</span><select id="set-quality">
+      <option value="auto" ${settings.quality === 'auto' ? 'selected' : ''}>Tự động (đang ${QUALITY_PRESETS[settings.autoLevel].label})</option>
+      ${QUALITY_ORDER.map((q) => `<option value="${q}" ${settings.quality === q ? 'selected' : ''}>${QUALITY_PRESETS[q].label}</option>`).join('')}
+    </select><b>Máy giật thì chọn Thấp</b></label>
     <p class="set-note">Trong trận: cuộn chuột để zoom, phím M bật hoặc tắt nhạc nền, Z X C V nhắn nhanh khi chơi cùng bạn bè.</p>`;
   el.querySelectorAll<HTMLInputElement>('[data-set]').forEach((inp) => {
     const key = inp.dataset.set as 'sfx' | 'music' | 'zoom';
@@ -864,8 +868,11 @@ export function renderSettings(el: HTMLElement): void {
       show();
     });
   });
-  el.querySelector<HTMLInputElement>('#set-bloom')?.addEventListener('change', (e) => {
-    settings.bloom = (e.target as HTMLInputElement).checked;
+  el.querySelector<HTMLSelectElement>('#set-quality')?.addEventListener('change', (e) => {
+    const v = (e.target as HTMLSelectElement).value as QualitySetting;
+    settings.quality = v;
+    // Chọn lại Tự động thì cho đo lại từ mức Vừa
+    if (v === 'auto') settings.autoLevel = 'medium';
     saveSettings();
   });
 }
