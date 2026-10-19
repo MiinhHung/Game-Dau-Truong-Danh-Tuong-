@@ -4,6 +4,7 @@ import { applyAvatar } from '../../rendering/loaders/glb-avatar';
 import { buildHuman, buildWeaponModel, type Rig } from '../../rendering/models/models';
 import { attachGearToRig } from '../../rendering/items/gear-models';
 import { cyl, mat, shadowed } from '../../rendering/primitives/shapes';
+import { createEnvironment, setupToneMapping } from '../../rendering/postfx/render-pipeline';
 
 /**
  * Sân khấu 3D hiển thị toàn thân tướng (dáng đứng) trong giao diện Cửa hàng trang bị.
@@ -45,6 +46,9 @@ export class ShopHeroStage {
       this.renderer.setSize(canvas.clientWidth || 280, canvas.clientHeight || 260, false);
       this.renderer.shadowMap.enabled = true;
       this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      setupToneMapping(this.renderer);
+      this.scene.environment = createEnvironment(this.renderer);
+      this.scene.environmentIntensity = 0.5;
     } catch {
       // Nếu WebGL không hỗ trợ
       this.renderer = null;
@@ -214,6 +218,7 @@ export class ShopHeroStage {
     this.canvas.removeEventListener('touchstart', this.onTouchStartBound);
     window.removeEventListener('touchmove', this.onTouchMoveBound);
     window.removeEventListener('touchend', this.onTouchEndBound);
+    this.scene.environment?.dispose();
     if (this.renderer) {
       this.renderer.dispose();
       this.renderer = null;

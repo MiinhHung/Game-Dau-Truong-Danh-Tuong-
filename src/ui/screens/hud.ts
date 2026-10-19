@@ -847,6 +847,7 @@ export function renderSettings(el: HTMLElement): void {
     <label class="setrow"><span>Âm hiệu ứng</span><input type="range" min="0" max="100" value="${Math.round(settings.sfx * 100)}" data-set="sfx"><b></b></label>
     <label class="setrow"><span>Nhạc nền</span><input type="range" min="0" max="100" value="${Math.round(settings.music * 100)}" data-set="music"><b></b></label>
     <label class="setrow"><span>Camera xa gần</span><input type="range" min="9" max="36" value="${Math.round(settings.zoom)}" data-set="zoom"><b></b></label>
+    <label class="setrow"><span>Hiệu ứng phát sáng</span><input type="checkbox" id="set-bloom" ${settings.bloom ? 'checked' : ''}><b>Tắt nếu máy bị giật</b></label>
     <p class="set-note">Trong trận: cuộn chuột để zoom, phím M bật hoặc tắt nhạc nền, Z X C V nhắn nhanh khi chơi cùng bạn bè.</p>`;
   el.querySelectorAll<HTMLInputElement>('[data-set]').forEach((inp) => {
     const key = inp.dataset.set as 'sfx' | 'music' | 'zoom';
@@ -862,6 +863,10 @@ export function renderSettings(el: HTMLElement): void {
       if (key === 'music') ambience.applyVolume();
       show();
     });
+  });
+  el.querySelector<HTMLInputElement>('#set-bloom')?.addEventListener('change', (e) => {
+    settings.bloom = (e.target as HTMLInputElement).checked;
+    saveSettings();
   });
 }
 

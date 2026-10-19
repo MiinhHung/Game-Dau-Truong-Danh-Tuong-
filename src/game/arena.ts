@@ -2856,7 +2856,7 @@ export class Arena {
     for (const mt of m.rig.mats) {
       mt.emissive.setHex(flashing ? 0xffffff : (mt.userData.baseEmissive ?? mt.emissive.getHex()));
       if (mt.userData.baseEmissive === undefined && !flashing) mt.userData.baseEmissive = mt.emissive.getHex();
-      mt.emissiveIntensity = flashing ? 0.9 : (mt.userData.baseIntensity ?? mt.emissiveIntensity);
+      mt.emissiveIntensity = flashing ? 0.45 : (mt.userData.baseIntensity ?? mt.emissiveIntensity);
       if (mt.userData.baseIntensity === undefined && !flashing) mt.userData.baseIntensity = mt.emissiveIntensity;
     }
     if (m.bar) m.bar.grp.quaternion.copy(this.camera.quaternion).premultiply(g.quaternion.clone().invert());

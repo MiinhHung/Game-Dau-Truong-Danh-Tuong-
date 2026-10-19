@@ -9,16 +9,23 @@ import { loadSave, loadoutOf, writeSave } from './infrastructure/persistence/sav
 import { createHud, hideModal, LobbyUI, showGameOver, showOnlineMenu, showPause } from './ui/screens/hud';
 import { showLoadingScreen } from './ui/screens/loading-screen';
 import { logger } from './shared/logger';
+import { settings } from './infrastructure/persistence/settings-repository';
+import { createEnvironment, RenderPipeline, setupToneMapping } from './rendering/postfx/render-pipeline';
 
 const canvas = document.getElementById('c') as HTMLCanvasElement;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+setupToneMapping(renderer);
+const pipeline = new RenderPipeline(renderer);
+const envMap = createEnvironment(renderer);
 
 const save = loadSave();
 const hud = createHud();
 const lobby = new LobbyScene();
+lobby.scene.environment = envMap;
+lobby.scene.environmentIntensity = 0.35;
 const net = new NetClient();
 let mode: 'lobby' | 'arena' = 'lobby';
 let paused = false;
@@ -41,6 +48,8 @@ const arena = new Arena(
   },
   () => (paused ? closePause() : openPause()),
 );
+arena.scene.environment = envMap;
+arena.scene.environmentIntensity = 0.15;
 
 function syncPreview(): void {
   lobby.setGeneral(save.general);
@@ -197,6 +206,7 @@ function resize(): void {
   const w = window.innerWidth;
   const h = window.innerHeight;
   renderer.setSize(w, h, false);
+  pipeline.setSize(w, h);
   arena.resize(w, h);
   lobby.resize(w, h);
 }
@@ -213,16 +223,19 @@ const clock = new THREE.Clock();
 function loop(): void {
   const dt = clock.getDelta();
   const t = clock.elapsedTime;
+  pipeline.bloomEnabled = settings.bloom;
+  // Sảnh là cảnh tối nên cần phơi sáng cao hơn; trận đấu có mặt trời mạnh, hạ xuống để màu không bị nhạt
+  renderer.toneMappingExposure = mode === 'lobby' ? 1.05 : 0.8;
   if (mode === 'lobby') {
     lobby.update(dt, t);
-    renderer.render(lobby.scene, lobby.camera);
+    pipeline.render(lobby.scene, lobby.camera);
   } else {
     arena.update(dt);
-    renderer.render(arena.scene, arena.camera);
+    pipeline.render(arena.scene, arena.camera);
   }
   requestAnimationFrame(loop);
 }
 loop();
 
 // Hỗ trợ kiểm thử trong console
-(window as unknown as Record<string, unknown>).__arena = { arena, save, startRun, toLobby, renderer, net, online, lobby };
+(window as unknown as Record<string, unknown>).__arena = { arena, save, startRun, toLobby, renderer, net, online, lobby, pipeline, settings };

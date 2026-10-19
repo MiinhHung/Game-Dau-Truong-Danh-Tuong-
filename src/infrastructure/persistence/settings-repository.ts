@@ -9,12 +9,14 @@ export interface Settings {
   music: number;
   /** Khoảng cách camera (9 gần nhất, 36 xa nhất). */
   zoom: number;
+  /** Hiệu ứng quầng sáng (bloom). Tắt để chạy mượt hơn trên máy yếu. */
+  bloom: boolean;
 }
 
 const KEY = STORAGE_KEYS.SETTINGS;
 
 function load(): Settings {
-  const d: Settings = { sfx: 1, music: 0.9, zoom: GAME_CONSTANTS.CAMERA_ZOOM_DEFAULT };
+  const d: Settings = { sfx: 1, music: 0.9, zoom: GAME_CONSTANTS.CAMERA_ZOOM_DEFAULT, bloom: true };
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Partial<Settings> | null;
     if (raw && typeof raw === 'object') {
@@ -22,6 +24,7 @@ function load(): Settings {
       d.sfx = n(raw.sfx, 0, 1, d.sfx);
       d.music = n(raw.music, 0, 1, d.music);
       d.zoom = n(raw.zoom, GAME_CONSTANTS.CAMERA_ZOOM_MIN, GAME_CONSTANTS.CAMERA_ZOOM_MAX, d.zoom);
+      if (typeof raw.bloom === 'boolean') d.bloom = raw.bloom;
     }
   } catch {
     /* dùng mặc định */
