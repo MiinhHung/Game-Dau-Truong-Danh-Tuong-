@@ -73,27 +73,24 @@
 
         <!-- Ô NÂNG CẤP BÊN TRÁI MÀN HÌNH (KHÔNG PAUSE GAME KHI LÊN CẤP) -->
         <div class="side-levelup-wrap hidden" id="side-levelup-wrap">
-          <button class="side-levelup-btn" id="side-levelup-btn" title="Có nâng cấp mới! Nhấn chuột trái hoặc phím [B] để mở">
-            <span class="levelup-pulse"></span>
-            <div class="levelup-arrow-box" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                <path d="M12 4l-7 7h4v9h6v-9h4z"/>
-              </svg>
-            </div>
-            <div class="levelup-text-group">
-              <div class="levelup-title-row">
-                <span class="levelup-label">NÂNG CẤP</span>
-                <kbd class="levelup-key-hint">B</kbd>
-              </div>
-              <span class="levelup-badge" id="side-levelup-count">+1</span>
-            </div>
+          <button class="lvl-btn" id="side-levelup-btn" title="Có nâng cấp mới! Bấm hoặc nhấn phím B để chọn">
+            <span class="lvl-btn-medal" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 3l-7 7h4.5v8h5v-8H19z"/></svg>
+              <span class="lvl-btn-lv" id="side-levelup-lv">1</span>
+            </span>
+            <span class="lvl-btn-text">
+              <b>LÊN CẤP</b>
+              <small id="side-levelup-hint">Chọn nâng cấp</small>
+            </span>
+            <span class="lvl-btn-count" id="side-levelup-count">+1</span>
+            <kbd class="lvl-btn-key">B</kbd>
           </button>
-          <div class="side-levelup-popover hidden" id="side-levelup-popover">
-            <div class="popover-title">
-              <span>LÊN CẤP! CHỌN 1 NÂNG CẤP</span>
-              <small>(Phím 1, 2, 3 hoặc Click • Phím B đóng/mở)</small>
+          <div class="side-levelup-popover lvl-pop hidden" id="side-levelup-popover">
+            <div class="lvl-pop-head">
+              <b>CHỌN MỘT NÂNG CẤP</b>
+              <small>Phím 1 · 2 · 3 hoặc bấm vào thẻ · B để đóng</small>
             </div>
-            <div class="popover-cards-col" id="side-cards-container"></div>
+            <div class="lvl-pop-cards" id="side-cards-container"></div>
           </div>
         </div>
 

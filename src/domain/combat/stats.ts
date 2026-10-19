@@ -36,6 +36,26 @@ export interface Stats {
   thorns: number;
   /** Máu tự hồi mỗi giây (thẻ Hồi Phục). */
   regen: number;
+  /** Hệ số tầm hút vàng và bánh chưng (thẻ Nam Châm Vàng). */
+  magnet: number;
+  /** Xác suất đòn đánh phóng sét sang quái gần (Lôi Điểu). */
+  chainChance: number;
+  /** Xác suất đòn đánh thiêu đốt (Hỏa Ấn). */
+  burnChance: number;
+  /** Xác suất đòn đánh làm chậm (Băng Tâm). */
+  chillChance: number;
+  /** Sát thương cộng thêm lên quái tinh anh và boss (Thợ Săn Đầu Lĩnh). */
+  eliteDmg: number;
+  /** Số cấp Cuồng Huyết: mạnh hơn khi máu thấp. */
+  berserk: number;
+  /** Sát thương sóng chấn cuối mỗi cú lướt (Lướt Ảnh Chấn). */
+  dashStrike: number;
+  /** Tỉ lệ máu tối đa của quái bị hạ dùng làm sát thương nổ (Bộc Phá Hồn). */
+  deathBlast: number;
+  /** Lá chắn định kỳ theo tỉ lệ máu tối đa (Kim Cang Thuẫn). */
+  aegis: number;
+  /** Số lần hồi sinh trong lượt (Phục Sinh Thần Phù). */
+  extraLife: number;
 }
 
 export function gearOf(src: StatSource, slot: GearSlot): Gear | null {
@@ -71,5 +91,15 @@ export function computeStats(src: StatSource): Stats {
     critDmgMul: 1.5,
     thorns: 0,
     regen: 0,
+    magnet: 1,
+    chainChance: 0,
+    burnChance: 0,
+    chillChance: 0,
+    eliteDmg: 0,
+    berserk: 0,
+    dashStrike: 0,
+    deathBlast: 0,
+    aegis: 0,
+    extraLife: 0,
   };
 }

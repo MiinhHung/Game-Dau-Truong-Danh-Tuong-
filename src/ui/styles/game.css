@@ -1282,186 +1282,209 @@ button { font-family: inherit; }
   pointer-events: auto;
   user-select: none;
 }
-.side-levelup-btn {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 6px 14px 6px 10px;
-  background: #19140e;
-  border: 2.5px solid #ffd24a;
-  border-radius: 10px;
-  cursor: pointer;
-  color: #fff;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.75), 0 0 14px rgba(255, 210, 74, 0.35);
+/* Nút LÊN CẤP: viền và quầng đổi màu theo thẻ hiếm nhất đang được mời */
+.lvl-btn {
+  --rc: #ffd24a;
+  --rc-dim: rgba(255, 210, 74, 0.35);
   position: relative;
-  transition: transform 0.15s, box-shadow 0.15s, filter 0.15s;
-}
-.side-levelup-btn:hover {
-  transform: scale(1.05);
-  filter: brightness(1.15);
-  box-shadow: 0 6px 22px rgba(255, 210, 74, 0.65);
-}
-.levelup-pulse {
-  position: absolute;
-  inset: -4px;
-  border: 2px solid #ffd24a;
-  border-radius: 13px;
-  animation: lvlPulse 1.8s infinite;
-  pointer-events: none;
-}
-@keyframes lvlPulse {
-  0% { opacity: 0.85; transform: scale(1); }
-  100% { opacity: 0; transform: scale(1.18); }
-}
-.levelup-arrow-box {
-  width: 28px;
-  height: 28px;
-  background: #0284c7;
-  border: 2px solid #000000;
-  border-radius: 4px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  color: #ffffff;
-  flex-shrink: 0;
-  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.35);
-}
-.levelup-text-group {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-}
-.levelup-title-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.levelup-label {
-  font-size: 13px;
-  font-weight: 900;
-  color: #ffd24a;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
-}
-.levelup-key-hint {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 210, 74, 0.18);
-  border: 1px solid #ffd24a;
-  color: #ffd24a;
-  font-size: 10px;
-  font-weight: 900;
+  gap: 10px;
+  padding: 7px 10px 7px 7px;
+  background: linear-gradient(180deg, #241a10 0%, #150f09 100%);
+  border: 2px solid var(--rc);
+  border-radius: 12px;
+  color: #fff;
+  cursor: pointer;
   font-family: inherit;
-  border-radius: 3px;
-  padding: 0 5px;
-  height: 16px;
-  line-height: 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7), 0 0 18px var(--rc-dim);
+  animation: lvlGlow 1.6s ease-in-out infinite;
+  transition: transform 0.15s;
 }
-.levelup-badge {
-  font-size: 15px;
+.lvl-btn:hover { transform: translateY(-2px) scale(1.03); }
+.lvl-btn.r-rare { --rc: #4aa8ff; --rc-dim: rgba(74, 168, 255, 0.45); }
+.lvl-btn.r-epic { --rc: #c77dff; --rc-dim: rgba(199, 125, 255, 0.55); }
+@keyframes lvlGlow {
+  0%, 100% { box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7), 0 0 10px var(--rc-dim); }
+  50% { box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7), 0 0 26px var(--rc-dim); }
+}
+.lvl-btn-medal {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #1a1208;
+  background: radial-gradient(circle at 35% 30%, #fff6cf 0%, var(--rc) 55%, #6b4a10 100%);
+  box-shadow: inset 0 -3px 6px rgba(0, 0, 0, 0.35), 0 0 0 2px rgba(0, 0, 0, 0.6);
+  animation: lvlBob 1.2s ease-in-out infinite;
+}
+.lvl-btn.r-rare .lvl-btn-medal { background: radial-gradient(circle at 35% 30%, #e6f3ff 0%, #4aa8ff 55%, #123a6a 100%); }
+.lvl-btn.r-epic .lvl-btn-medal { background: radial-gradient(circle at 35% 30%, #f5e6ff 0%, #c77dff 55%, #3e1466 100%); }
+@keyframes lvlBob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+.lvl-btn-lv {
+  position: absolute;
+  right: -6px;
+  bottom: -5px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: #120c07;
+  border: 1.5px solid var(--rc);
+  color: var(--rc);
+  font-size: 10.5px;
+  font-weight: 900;
+  line-height: 15px;
+  text-align: center;
+}
+.lvl-btn-text { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.15; }
+.lvl-btn-text b { font-size: 13.5px; font-weight: 900; letter-spacing: 0.06em; color: var(--rc); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9); }
+.lvl-btn-text small { font-size: 10.5px; font-weight: 700; color: #d9cbb0; }
+.lvl-btn-count {
+  font-size: 16px;
   font-weight: 900;
   color: #4ade80;
-  text-shadow: 0 0 8px rgba(74, 222, 128, 0.7), 0 1px 2px rgba(0, 0, 0, 0.9);
-  line-height: 1.1;
+  text-shadow: 0 0 8px rgba(74, 222, 128, 0.6), 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+.lvl-btn-key {
+  align-self: flex-start;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 900;
+  color: var(--rc);
+  border: 1px solid var(--rc);
+  border-radius: 4px;
+  padding: 0 5px;
+  line-height: 15px;
+  background: rgba(0, 0, 0, 0.35);
 }
 
-/* Cửa sổ 3 thẻ nâng cấp bung ra từ nút bên trái */
+/* Bảng chọn thẻ bung lên phía trên nút */
 .side-levelup-popover {
   position: absolute;
   left: 0;
   bottom: calc(100% + 10px);
-  width: 310px;
-  background: rgba(18, 13, 9, 0.96);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 2px solid #c8aa6e;
-  border-radius: 8px;
+  pointer-events: auto;
+}
+.lvl-pop {
+  width: 340px;
   padding: 12px;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.85), 0 0 20px rgba(200, 170, 110, 0.3);
+  background: rgba(16, 11, 7, 0.96);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1.5px solid #7a5a2a;
+  border-radius: 12px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.85);
   display: flex;
   flex-direction: column;
   gap: 10px;
   animation: popoverIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  pointer-events: auto;
 }
 @keyframes popoverIn {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.popover-title {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  border-bottom: 1px solid rgba(200, 170, 110, 0.3);
-  padding-bottom: 6px;
-  font-size: 13px;
-  font-weight: 800;
-  color: #f5d67a;
-}
-.popover-title small {
-  font-size: 10.5px;
-  color: #b8a682;
-  font-weight: 500;
-}
-.popover-cards-col {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 48vh;
-  overflow-y: auto;
-}
-.side-upcard {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px 12px;
-  background: rgba(28, 20, 13, 0.92);
-  border: 1.5px solid #5a4220;
-  border-radius: 6px;
-  cursor: pointer;
-  text-align: left;
-  color: #f4ead4;
-  transition: all 0.15s ease;
+.lvl-pop-head { display: flex; flex-direction: column; gap: 2px; }
+.lvl-pop-head b { font-size: 13px; font-weight: 900; letter-spacing: 0.06em; color: #f5d67a; }
+.lvl-pop-head small { font-size: 10.5px; color: #a89878; }
+.lvl-pop-cards { display: flex; flex-direction: column; gap: 8px; max-height: 52vh; overflow-y: auto; }
+
+/* Thẻ nâng cấp: màu theo độ hiếm */
+.upc {
+  --rc: #b8c4d0;
+  --rc-bg: rgba(184, 196, 208, 0.08);
   position: relative;
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+  padding: 10px 10px 10px 10px;
+  background: linear-gradient(100deg, var(--rc-bg) 0%, rgba(24, 17, 11, 0.95) 45%);
+  border: 1.5px solid rgba(255, 255, 255, 0.08);
+  border-left: 4px solid var(--rc);
+  border-radius: 9px;
+  color: #f4ead4;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 0.12s, border-color 0.12s, box-shadow 0.12s;
 }
-.side-upcard:hover {
-  background: rgba(48, 34, 20, 0.96);
-  border-color: #ffd24a;
+.upc.r-rare { --rc: #4aa8ff; --rc-bg: rgba(74, 168, 255, 0.16); }
+.upc.r-epic { --rc: #c77dff; --rc-bg: rgba(199, 125, 255, 0.22); }
+.upc:hover {
   transform: translateX(4px);
-  box-shadow: 0 4px 14px rgba(255, 210, 74, 0.3);
+  border-color: var(--rc);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--rc) 45%, transparent);
 }
-.side-upcard kbd {
+/* Vệt sáng lướt qua thẻ sử thi */
+.upc.r-epic::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.12) 50%, transparent 65%);
+  transform: translateX(-100%);
+  animation: upcShine 2.4s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes upcShine {
+  0%, 30% { transform: translateX(-100%); }
+  70%, 100% { transform: translateX(100%); }
+}
+.upc-icon {
+  flex: 0 0 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  font-size: 24px;
+  border-radius: 9px;
+  background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--rc) 35%, transparent), rgba(0, 0, 0, 0.45));
+  border: 1px solid color-mix(in srgb, var(--rc) 60%, transparent);
+}
+.upc-body { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; padding-right: 18px; }
+.upc-top { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.upc-top b { font-size: 13.5px; font-weight: 800; color: #fff3d4; }
+.upc-top em {
+  font-style: normal;
+  font-size: 9.5px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--rc);
+}
+.upc-desc { font-size: 11.5px; line-height: 1.35; color: #d8ccb4; }
+.upc-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px; }
+.upc-tag {
+  font-size: 9.5px;
+  font-weight: 800;
+  color: #a89878;
+  border: 1px solid rgba(168, 152, 120, 0.4);
+  border-radius: 4px;
+  padding: 0 5px;
+  line-height: 14px;
+}
+.upc-pips { display: flex; gap: 3px; }
+.upc-pips i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255, 255, 255, 0.14); }
+.upc-pips i.on { background: var(--rc); }
+.upc-pips i.next { background: transparent; box-shadow: inset 0 0 0 1.5px var(--rc); animation: pipBlink 1s ease-in-out infinite; }
+@keyframes pipBlink { 50% { opacity: 0.35; } }
+.upc kbd {
   position: absolute;
   top: 8px;
   right: 8px;
-  background: #3a2814;
-  border: 1px solid #785828;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 900;
+  color: var(--rc);
+  border: 1px solid color-mix(in srgb, var(--rc) 60%, transparent);
   border-radius: 4px;
-  padding: 1px 6px;
-  font-size: 11px;
-  font-weight: 800;
-  color: #ffd24a;
-}
-.side-upcard b {
-  font-size: 13.5px;
-  font-weight: 800;
-  color: #ffd24a;
-  padding-right: 28px;
-}
-.side-upcard span {
-  font-size: 11.5px;
-  line-height: 1.35;
-  color: #e0d4bc;
-}
-.side-upcard small {
-  font-size: 10px;
-  font-weight: 700;
-  color: #7ad0ff;
-  margin-top: 2px;
+  padding: 0 5px;
+  line-height: 15px;
+  background: rgba(0, 0, 0, 0.4);
 }
 
 /* ---------- Khung tướng và bộ nâng cấp ở cạnh dưới màn hình ---------- */

@@ -1,7 +1,8 @@
 import { settings, saveSettings } from '../../infrastructure/persistence/settings-repository';
 import { ambience } from '../../infrastructure/audio/ambience-engine';
 import { COMBOS, ESKILLS, EVOLVE, GEARS, GENERALS, MAX_WEAPON_LEVEL, SLOT_LABEL, WEAPONS, comboFor, upgradeCost, type GearSlot, type WeaponKind, type General, type Gear } from '../../domain/data';
-import type { Hud, RunResult } from '../../game/types';
+import type { Hud, OfferItem, RunResult } from '../../game/types';
+import { RARITY_LABEL } from '../../domain/combat/cards';
 import { buyGear, buyWeapon, equipGear, selectGeneral, selectWeapon, unequipSlot, upgradeWeapon, type ShopResult } from '../../domain/progression/shop';
 import { computeStats } from '../../domain/combat/stats';
 import { ACHIEVEMENTS, ensureQuests, pendingAchievements, questGoal, questReward, questText } from '../../domain/progression/quests';
@@ -126,7 +127,7 @@ export function createHud(): HudApi {
   let prevUlt = 1;
   let prevE = 1;
   let isPaused = false;
-  let currentOffer: { items: { name: string; desc: string; level: string }[]; pick: (i: number) => void } | null = null;
+  let currentOffer: { items: OfferItem[]; pick: (i: number) => void } | null = null;
   let heroCastTimer = 0;
   let castHintTimer = 0;
 
@@ -341,6 +342,8 @@ export function createHud(): HudApi {
       if (lolXpF) lolXpF.style.width = pct;
       if (lolXpT) lolXpT.textContent = `Cấp ${level}`;
       if (lolLvlBadge) lolLvlBadge.textContent = String(level);
+      const sideLv = $('side-levelup-lv');
+      if (sideLv && sideLv.textContent !== String(level)) sideLv.textContent = String(level);
 
       const badge = $('hero-lvl-badge');
       if (badge) badge.textContent = `Cấp ${level}`;
@@ -394,7 +397,7 @@ export function createHud(): HudApi {
         .map((p) => {
           const isCombo = p.startsWith('Combo ');
           const isEvo = p.includes('tiến hóa');
-          const icon = isCombo ? '⚡ ' : isEvo ? '✨ ' : '🔰 ';
+          const icon = isCombo ? '⚡ ' : isEvo ? '✨ ' : '';
           const cls = isCombo ? 'combo' : isEvo ? 'evo' : 'card';
           return `<span class="deck-chip ${cls}">${icon}<b>${escapeHtml(p)}</b></span>`;
         })
@@ -422,20 +425,30 @@ export function createHud(): HudApi {
       // Render sang giao diện widget bên trái màn hình không gây pause game
       if (sideWrap && sideCards && sidePopover) {
         sideWrap.classList.remove('hidden');
+        // Nút đổi màu theo thẻ hiếm nhất đang được mời, để người chơi biết có thẻ đáng mở
+        const best = items.some((c) => c.rarity === 'epic') ? 'epic' : items.some((c) => c.rarity === 'rare') ? 'rare' : 'common';
+        const btn = $('side-levelup-btn');
+        btn?.classList.remove('r-common', 'r-rare', 'r-epic');
+        btn?.classList.add(`r-${best}`);
+        const hintEl = $('side-levelup-hint');
+        if (hintEl) hintEl.textContent = best === 'epic' ? 'Có thẻ Sử thi!' : best === 'rare' ? 'Có thẻ Hiếm' : 'Chọn nâng cấp';
         sideCards.innerHTML = items
-          .map(
-            (c, i) => `
-          <button class="side-upcard" data-i="${i}" title="Chọn nâng cấp này">
+          .map((c, i) => {
+            const pips = Array.from({ length: c.max }, (_, k) => `<i class="${k < c.owned ? 'on' : k === c.owned ? 'next' : ''}"></i>`).join('');
+            return `
+          <button class="upc r-${c.rarity}" data-i="${i}" title="Chọn nâng cấp này (phím ${i + 1})">
+            <span class="upc-icon">${escapeHtml(c.icon)}</span>
+            <span class="upc-body">
+              <span class="upc-top"><b>${escapeHtml(c.name)}</b><em>${escapeHtml(RARITY_LABEL[c.rarity])}</em></span>
+              <span class="upc-desc">${escapeHtml(c.desc)}</span>
+              <span class="upc-foot"><span class="upc-tag">${escapeHtml(c.tag)}</span><span class="upc-pips" title="${escapeHtml(c.level)}">${pips}</span></span>
+            </span>
             <kbd>${i + 1}</kbd>
-            <b>${escapeHtml(c.name)}</b>
-            <span>${escapeHtml(c.desc)}</span>
-            <small>${escapeHtml(c.level)}</small>
-          </button>
-        `,
-          )
+          </button>`;
+          })
           .join('');
 
-        sideCards.querySelectorAll<HTMLButtonElement>('.side-upcard').forEach((b) => {
+        sideCards.querySelectorAll<HTMLButtonElement>('.upc').forEach((b) => {
           b.onclick = (e) => {
             e.stopPropagation();
             sidePopover.classList.add('hidden');

@@ -77,7 +77,7 @@ export const GENERALS: General[] = [
     id: 'hai_ba_trung', name: 'Trưng Trắc', title: 'Hai Bà Trưng',
     passive: 'Hùng khí đôi chị em: +20% chí mạng, +5% sát thương.',
     hp: 0.95, speed: 1, dmg: 1.05, crit: 0.2, atkSpeed: 1, proj: 1,
-    ult: 'Mê Linh Triệu Hồi', ultColor: 0xffe08a, ultKind: 'summon', ultCd: 30,
+    ult: 'Mê Linh Triệu Hồi', ultColor: 0xffe08a, ultKind: 'summon', ultCd: 26,
     ultDesc: 'Nổi cồng lệnh: sóng đồng làm choáng quái xung quanh, đồng thời triệu hồi Voi Trắng giậm đất đè quái và Trưng Nhị bắn cung tự động, cùng sát cánh 15 giây.',
     look: { skin: 0xf2c49a, hair: 0x38aad6, top: 0xf2a4b4, topDark: 0xd6788e, pants: 0x2a2630, boots: 0xb0202c, trim: 0xe8c04a, hat: 'none', hatColor: 0x2a7aa6, female: true, wavyHair: 0x2a78a8, sleeve34: true, miniSkirt: 0x24202a, heels: true, earrings: 0xe8c04a },
   },
@@ -102,7 +102,7 @@ export const GENERALS: General[] = [
     passive: 'Nam quốc sơn hà: +25% tốc độ đánh.',
     hp: 0.95, speed: 1, dmg: 1, crit: 0.05, atkSpeed: 1.25, proj: 1,
     ult: 'Nam Quốc Sơn Hà', ultColor: 0xc8b8ff, ultKind: 'poem', ultCd: 28,
-    ultDesc: 'Lời thơ thần vang khắp màn hình thành các vòng sóng âm kim sắc: quái chịu sát thương phép rất lớn và Hoảng Sợ 5 giây (chạy toán loạn, không tấn công được). Boss không bị hoảng sợ.',
+    ultDesc: 'Lời thơ thần vang thành ba vòng sóng âm kim sắc tầm 18 quanh người: quái chịu sát thương phép lớn và Hoảng Sợ 3 giây (chạy toán loạn, không tấn công được). Boss không bị hoảng sợ.',
     look: { skin: 0xe0b088, hair: 0x181210, top: 0x3a3f4a, topDark: 0x262a32, pants: 0x20242c, boots: 0x14141a, trim: 0xe0b23c, hat: 'quan', hatColor: 0x14141a, cape: 0x262a32 },
   },
   {
@@ -178,8 +178,8 @@ export interface ESkill {
 
 export const ESKILLS: Record<string, ESkill> = {
   tran_hung_dao: { name: 'Hỏa Thuyền Phá Trận', desc: 'Triệu hồi hạm đội chiến thuyền lửa hình mũi tên xé toạc màn sương và sóng nước Bạch Đằng, để lại đường lửa thiêu đốt và chuỗi nổ tung áp đảo quân địch.', cd: 12, aim: 'line', range: 24, size: 6.5 },
-  quang_trung: { name: 'Thần Tốc Hỏa Pháo', desc: 'Bộc phát khí thế thần tốc đại phá quân Thanh, phóng xung lực hỏa long pháo xé toạc không gian với tốc độ cực đại, xuyên thủng và thiêu đốt đội hình địch trong biển lửa bão táp.', cd: 9, aim: 'line', range: 20, size: 6.0 },
-  le_loi: { name: 'Kim Quang Hộ Thể', desc: 'Ngưng tụ Hoàng Long Lam Sơn và long khí hoàng đế, tạo hộ thể hoàng kim bán kính 3.5m tồn tại 6 giây: giảm 60% sát thương, tạo lá chắn 45% máu tối đa, hất văng và làm choáng quái xung quanh.', cd: 16, aim: 'self', range: 0 },
+  quang_trung: { name: 'Thần Tốc Hỏa Pháo', desc: 'Bộc phát khí thế thần tốc đại phá quân Thanh, phóng xung lực hỏa long pháo xé toạc không gian với tốc độ cực đại, xuyên thủng và thiêu đốt đội hình địch trong biển lửa bão táp.', cd: 10, aim: 'line', range: 20, size: 6.0 },
+  le_loi: { name: 'Kim Quang Hộ Thể', desc: 'Ngưng tụ Hoàng Long Lam Sơn và long khí hoàng đế, tạo hộ thể hoàng kim bán kính 3.5m tồn tại 6 giây: giảm 50% sát thương, tạo lá chắn 35% máu tối đa, hất văng và làm choáng quái xung quanh.', cd: 16, aim: 'self', range: 0 },
   hai_ba_trung: { name: 'Cồng Mê Linh', desc: 'Dấu cộng xanh lá xoay quanh người, hồi 30% máu tối đa cho bạn và đồng đội trong tầm 10.', cd: 18, aim: 'self', range: 0 },
   ba_trieu: { name: 'Cuồng Phong Chưởng', desc: 'Tụ khí ngàn dặm, tung bão tố chưởng phong hình cánh cung xé gió. Giữ chuột để tụ lực: tầm xa lên tới 26m, thổi bay và đẩy lùi kẻ địch với uy lực kinh thiên động địa.', cd: 9, aim: 'cone', range: 15, half: 0.65, charge: { sec: 1.2, extra: 11 } },
   ngo_quyen: { name: 'Bạch Đằng Thủy Trận', desc: 'Kêu gọi thủy triều sông Bạch Đằng: Làn đại hồng thủy cuộn trào cùng Thủy Long thần thoại và hàng cọc gỗ bọc sắt nhô lên từ lòng sông, hất tung và nghiền nát quân địch.', cd: 11, aim: 'line', range: 22, size: 5.5 },
@@ -355,7 +355,7 @@ export function bossTypeForWave(n: number): MonsterType {
  * cùng bản đồ vẫn khác nhau. Cứ 5 màn có boss xoay vòng Rồng Lửa, Titan Đá, Vua Xương.
  */
 export function waveComposition(n: number, bias: WaveBias = {}): WaveSpawn[] {
-  const total = 6 + n * 2;
+  const total = Math.round(8 + n * 2.5);
   const out: WaveSpawn[] = [];
   let left = total;
   let active = (bias.roster ?? DEFAULT_ROSTER).filter((e) => n >= e.from);
@@ -376,4 +376,27 @@ export function waveComposition(n: number, bias: WaveBias = {}): WaveSpawn[] {
   }
   if (n % 5 === 0) out.push({ type: bossTypeForWave(n), count: 1 });
   return out;
+}
+
+/**
+ * Sức mạnh quái theo màn và số người chơi (dùng chung cho game và tools/balance.mjs).
+ * Máu và sát thương có thêm thành phần bậc hai: sức mạnh người chơi tăng theo cấp số nhân nhờ thẻ cộng dồn,
+ * nếu quái chỉ tăng tuyến tính thì từ màn 10 trở đi quái chết quá nhanh và gần như không gây nguy hiểm.
+ */
+export function monsterScaling(wave: number, players = 1): { hp: number; dmg: number; speed: number } {
+  const k = Math.max(0, wave - 1);
+  return {
+    hp: (1 + 0.18 * k + 0.009 * k * k) * (1 + 0.6 * (players - 1)),
+    dmg: 1 + 0.1 * k + 0.0035 * k * k,
+    speed: 1 + Math.min(0.3, 0.012 * k),
+  };
+}
+
+/** Nhịp ra quái: số quái tối đa cùng lúc, số con mỗi lượt và khoảng cách giữa các lượt. */
+export function spawnPacing(wave: number, players = 1): { maxAlive: number; perTick: number; interval: number } {
+  return {
+    maxAlive: 30 + Math.min(14, wave) + 6 * (players - 1),
+    perTick: wave >= 4 || players > 2 ? 2 : 1,
+    interval: Math.max(0.35, 0.55 - 0.01 * wave),
+  };
 }

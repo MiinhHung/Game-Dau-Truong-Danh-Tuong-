@@ -6,6 +6,19 @@ import type { Stats } from '../domain/combat/stats';
 
 export type Role = 'solo' | 'host' | 'client';
 
+/** Một thẻ nâng cấp đang được mời chọn, kèm thông tin hiển thị. */
+export interface OfferItem {
+  name: string;
+  desc: string;
+  level: string;
+  rarity: 'common' | 'rare' | 'epic';
+  icon: string;
+  tag: string;
+  /** Số lần đã chọn thẻ này trong lượt. */
+  owned: number;
+  max: number;
+}
+
 export interface Hud {
   setHp(hp: number, max: number): void;
   setWave(text: string): void;
@@ -20,7 +33,7 @@ export interface Hud {
   /** Dòng tóm tắt các thẻ đã chọn. */
   setCards(text: string): void;
   /** Hiện 3 thẻ để chọn khi lên cấp; truyền null để ẩn. pick nhận chỉ số thẻ. */
-  showCards(items: { name: string; desc: string; level: string }[] | null, pick: (i: number) => void): void;
+  showCards(items: OfferItem[] | null, pick: (i: number) => void): void;
   setBoss(name: string | null, ratio: number): void;
   banner(text: string, sub?: string): void;
   pop(x: number, y: number, text: string, cls: string): void;
@@ -99,6 +112,10 @@ export interface Actor {
   /** Giây đồng đội đã đứng cạnh để cứu (khi gục). */
   reviveT: number;
   reviveFx?: number;
+  /** Số lần đã dùng Phục Sinh Thần Phù trong lượt. */
+  livesUsed?: number;
+  /** Thời điểm nhận lá chắn Kim Cang Thuẫn kế tiếp. */
+  aegisAt?: number;
   level: number;
   /** Kinh nghiệm hiện có (ở máy khách là tỉ lệ 0..1 nhận từ chủ phòng). */
   xp: number;

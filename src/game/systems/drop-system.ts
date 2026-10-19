@@ -30,6 +30,15 @@ export class DropSystem {
     this.coins = [];
   }
 
+  /** Cộng hết vàng đang nằm trên sàn cho người nhận do pick chọn, rồi dọn sạch (bánh chưng bị bỏ). */
+  collectAll(pick: (p: THREE.Vector3) => Actor, credit: (a: Actor, amount: number) => void): void {
+    for (const c of this.coins) {
+      if (!c.heal) credit(pick(c.mesh.position), c.value);
+      this.scene.remove(c.mesh);
+    }
+    this.coins = [];
+  }
+
   spawnCoin(at: THREE.Vector3, value: number): void {
     const mesh = this.coinTemplate.clone();
     mesh.position.set(at.x, 0.9, at.z);
@@ -66,7 +75,7 @@ export class DropSystem {
       const near = cb.nearestActor(p);
       const toP = near ? new THREE.Vector3(near.pos.x - p.x, 0.9 - p.y, near.pos.z - p.z) : new THREE.Vector3();
       const d = toP.length();
-      const magnet = !!near && c.age > 0.45 && d < (c.heal ? 3.5 : 6);
+      const magnet = !!near && c.age > 0.45 && d < (c.heal ? 3.5 : 6) * (near.stats.magnet ?? 1);
 
       if (magnet && near) {
         p.addScaledVector(toP.normalize(), (10 + c.age * 6) * dt);

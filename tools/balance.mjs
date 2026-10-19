@@ -51,7 +51,7 @@ for (const [name, filePath] of Object.entries(fileMap)) {
 const load = (f) => import(pathToFileURL(join(tmp, `${f}.js`)).href);
 const data = await load('data');
 const statsMod = await load('stats');
-const { GENERALS, WEAPONS, MONSTERS, waveComposition } = data;
+const { GENERALS, WEAPONS, MONSTERS, waveComposition, monsterScaling } = data;
 const { computeStats } = statsMod;
 
 /** Số mục tiêu trung bình mỗi đòn đánh, theo kiểu vũ khí (ước lượng thô). */
@@ -60,20 +60,23 @@ const WEAPON_BONUS = { phong_lon: 1.25, dieu_cay: 1.25, muoi_canh: 1.15 };
 
 function enemyHp(n) {
   const comp = waveComposition(n);
-  const hpMul = (1 + 0.14 * (n - 1)) * (1 + 0.6 * (PLAYERS - 1));
+  const sc = monsterScaling(n, PLAYERS);
   let hp = 0;
   let count = 0;
+  let atk = 0;
   for (const c of comp) {
-    hp += MONSTERS[c.type].hp * hpMul * c.count;
+    hp += MONSTERS[c.type].hp * sc.hp * c.count;
     count += c.count;
+    if (!MONSTERS[c.type].boss) atk += MONSTERS[c.type].atk * sc.dmg * c.count;
   }
+  const avgHit = atk / Math.max(1, comp.filter((c) => !MONSTERS[c.type].boss).reduce((t, c) => t + c.count, 0));
   // thêm quái khi chơi đông người (giống nextWave)
   if (PLAYERS > 1) {
     const extra = count * 0.55 * (PLAYERS - 1);
     hp += (hp / Math.max(1, count)) * extra;
     count += extra;
   }
-  return { hp, count: Math.round(count) };
+  return { hp, count: Math.round(count), avgHit };
 }
 
 /** Cấp nhân vật ước tính khi tới màn n (mỗi quái cho kinh nghiệm theo máu, như trong game). */
@@ -105,7 +108,7 @@ function dps(general, weapon, wLevel, n) {
 const rows = [];
 for (let n = 1; n <= WAVES; n++) {
   const e = enemyHp(n);
-  const entry = { wave: n, count: e.count, hp: Math.round(e.hp) };
+  const entry = { wave: n, count: e.count, hp: Math.round(e.hp), avgHit: e.avgHit };
   const res = [];
   for (const g of GENERALS) {
     for (const w of WEAPONS) {
@@ -129,12 +132,12 @@ if (CSV) {
   for (const r of rows) console.log([r.wave, r.count, r.hp, r.best.toFixed(1), r.median.toFixed(1), r.worst.toFixed(1)].join(','));
 } else {
   console.log(`Cân bằng ước lượng: ${PLAYERS} người chơi, ${WAVES} màn, ${GENERALS.length} tướng x ${WEAPONS.length} vũ khí x 3 cấp (+0, +3, +5)\n`);
-  console.log('Màn  Số quái  Tổng máu   Nhanh nhất  Trung vị  Chậm nhất   Ghi chú');
+  console.log('Màn  Số quái  Tổng máu   Nhanh nhất  Trung vị  Chậm nhất  ST quái/đòn  Ghi chú');
   const issues = [];
   for (const r of rows) {
     const note = r.median > 75 ? 'KHÓ QUÁ' : r.median < 6 ? 'DỄ QUÁ' : r.worst > 150 ? 'có bộ rất yếu' : '';
     if (note) issues.push(`Màn ${r.wave}: ${note}`);
-    console.log(`${String(r.wave).padStart(3)}  ${String(r.count).padStart(7)}  ${String(r.hp).padStart(8)}   ${r.best.toFixed(1).padStart(8)}s  ${r.median.toFixed(1).padStart(7)}s  ${r.worst.toFixed(1).padStart(8)}s   ${note}`);
+    console.log(`${String(r.wave).padStart(3)}  ${String(r.count).padStart(7)}  ${String(r.hp).padStart(8)}   ${r.best.toFixed(1).padStart(8)}s  ${r.median.toFixed(1).padStart(7)}s  ${r.worst.toFixed(1).padStart(8)}s  ${r.avgHit.toFixed(0).padStart(10)}   ${note}`);
   }
   const last = rows[rows.length - 1];
   console.log(`\nBộ mạnh nhất ở màn ${last.wave}: ${last.bestOf.g} + ${last.bestOf.w} +${last.bestOf.lv} (${last.bestOf.dps.toFixed(0)} sát thương/giây).`);

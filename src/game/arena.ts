@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { settings, saveSettings } from '../infrastructure/persistence/settings-repository';
 import { GAME_CONSTANTS } from '../config/game-constants';
 import { showTouch, touch } from '../ui/input/touch-controls';
-import { ESKILLS, Q_SKILLS, GENERALS, MAX_WEAPON_LEVEL, MONSTERS, TRUNG_NHI_LOOK, comboFor, waveComposition, type MonsterType } from '../domain/data';
-import { CARDS, cardById, pickOffer, xpNeed } from '../domain/combat/cards';
+import { ESKILLS, Q_SKILLS, GENERALS, MAX_WEAPON_LEVEL, MONSTERS, TRUNG_NHI_LOOK, comboFor, monsterScaling, spawnPacing, waveComposition, type MonsterType } from '../domain/data';
+import { CARDS, cardById, pickOffer, reapplyCards, xpNeed } from '../domain/combat/cards';
 import { checkAchievements, ensureQuests, questAdd } from '../domain/progression/quests';
 import { ambience } from '../infrastructure/audio/ambience-engine';
 import { HAZARDS, HAZARD_FROM, hazardById, hazardText } from '../rendering/fx/hazards';
@@ -472,6 +472,8 @@ export class Arena {
     const a = this.me;
     const ratio = a.hp / a.stats.maxHp;
     a.stats = computeStats(this.save);
+    // Áp lại các thẻ đã chọn trong trận, nếu không đổi trang bị lúc tạm dừng sẽ làm mất hết hiệu ứng thẻ
+    reapplyCards(a.stats, a.cards);
     a.hp = Math.max(1, Math.min(a.stats.maxHp, ratio * a.stats.maxHp));
     this.attachWeapon(a);
     attachGearToRig(a.rig, this.save.equipped);
@@ -805,7 +807,7 @@ export class Arena {
   private hurtActor(a: Actor, amount: number, from?: THREE.Vector3): void {
     if (!a.alive || this.over || this.time < a.invulnUntil || a.dashT > 0) return;
     const fort = this.inFort(a);
-    let dmg = Math.max(1, Math.round(amount * (1 - a.stats.reduce) * (a.guardUntil > this.time ? 0.4 : 1) * (fort ? 0.6 : 1)));
+    let dmg = Math.max(1, Math.round(amount * (1 - a.stats.reduce) * (a.guardUntil > this.time ? 0.5 : 1) * (fort ? 0.6 : 1)));
     if (fort && from) {
       const hit = this.mons.find((m) => !m.dead && m.pos.distanceTo(from) < 2.5);
       if (hit) this.damageMon(hit, amount * 0.5, a.pos, 3, this.forts[0]?.owner ?? a, false);
@@ -843,6 +845,16 @@ export class Arena {
         a.tgt.add(k);
         this.emit(['k', a.id, r2(k.x), r2(k.z)]);
       }
+    }
+    if (a.hp <= 0 && (a.livesUsed ?? 0) < a.stats.extraLife) {
+      // Phục Sinh Thần Phù: chặn cú gục ngã đầu tiên
+      a.livesUsed = (a.livesUsed ?? 0) + 1;
+      a.hp = Math.ceil(a.stats.maxHp * 0.5);
+      a.invulnUntil = this.time + 2.5;
+      this.popAt(a.pos, 'Phục Sinh!', 'heal', 3.2);
+      this.ring(a.pos, 5, 0xfff0a0, 0.8);
+      this.burst(a.pos.clone().setY(1.2), 0xfff0a0, 30, 8, 1.2);
+      this.addShake(0.5);
     }
     if (a.hp <= 0) {
       a.hp = 0;
@@ -882,6 +894,20 @@ export class Arena {
     a.dashSeq++;
     sfx.dash();
     this.ring(a.pos, 1.6, 0xffffff, 0.3);
+    if (this.role !== 'client') this.dashStrike(a);
+  }
+
+  /** Thẻ Lướt Ảnh Chấn: sóng chấn ở điểm kết thúc cú lướt (chủ phòng tính cho mọi người chơi). */
+  private dashStrike(a: Actor): void {
+    if (a.stats.dashStrike <= 0) return;
+    this.later(0.22, () => {
+      if (!a.alive) return;
+      this.ring(a.pos, 3.6, 0x9ad0ff, 0.4);
+      this.burst(a.pos.clone().setY(0.6), 0xc8e8ff, 12, 7, 0.9);
+      for (const m of this.mons) {
+        if (!m.dead && m.pos.distanceTo(a.pos) < 3.6 + m.def.radius) this.damageMon(m, a.stats.dashStrike, a.pos, 5, a);
+      }
+    });
   }
 
   /** Chủ phòng và chơi một mình: thi triển chiêu cuối riêng của từng tướng cho người chơi a. */
@@ -1575,7 +1601,7 @@ export class Arena {
         this.addShake(0.5);
         this.playSfx('boom');
         for (const m of this.mons) {
-          if (!m.dead && m.pos.distanceTo(a.pos) < R + m.def.radius) this.damageMon(m, 150, a.pos, 14, a);
+          if (!m.dead && m.pos.distanceTo(a.pos) < R + m.def.radius) this.damageMon(m, 110, a.pos, 14, a);
         }
       });
     }
@@ -1586,7 +1612,7 @@ export class Arena {
       this.playSfx('boom');
       for (const m of this.mons) {
         if (m.dead || m.pos.distanceTo(a.pos) > 14 + m.def.radius) continue;
-        this.damageMon(m, 200, a.pos, 18, a);
+        this.damageMon(m, 160, a.pos, 18, a);
         if (!m.dead) this.applyStun(m, 1.5);
       }
     });
@@ -1594,19 +1620,19 @@ export class Arena {
 
   /** Lý Thường Kiệt: Nam Quốc Sơn Hà. */
   private ultPoem(a: Actor): void {
-    const base = 150 * a.stats.dmgMult;
+    const base = 110 * a.stats.dmgMult;
     for (let i = 0; i < 3; i++) {
       this.later(i * 0.55, () => {
-        this.ring(a.pos, 30, 0xf0d070, 0.9);
-        this.ring(a.pos, 20, 0xc8b8ff, 0.8);
-        this.ring(a.pos, 10, 0xffffff, 0.7);
+        this.ring(a.pos, 18, 0xf0d070, 0.9);
+        this.ring(a.pos, 12, 0xc8b8ff, 0.8);
+        this.ring(a.pos, 6, 0xffffff, 0.7);
         this.burst(a.pos.clone().setY(1.2), 0xf0d070, 30, 11, 1);
         this.addShake(0.6);
         this.playSfx('boom');
         for (const m of this.mons) {
-          if (m.dead || m.pos.distanceTo(a.pos) > 34) continue;
+          if (m.dead || m.pos.distanceTo(a.pos) > 18 + m.def.radius) continue;
           this.damageMon(m, base, a.pos, 2, a, false);
-          if (i === 0) this.applyFear(m, 5);
+          if (i === 0) this.applyFear(m, 3);
         }
       });
     }
@@ -1690,18 +1716,36 @@ export class Arena {
     const o = owner ?? this.me;
     const k = o.stats.weapon.kind;
     const ranged = k === 'boomerang' || k === 'pierce';
-    return o.stats.dmgMult * (ranged ? o.stats.projMult : 1) * (o.dmgBuffUntil > this.time ? 1.25 : 1);
+    return o.stats.dmgMult * (ranged ? o.stats.projMult : 1) * (o.dmgBuffUntil > this.time ? 1.25 : 1) * (this.berserking(o) ? 1 + 0.3 * o.stats.berserk : 1);
   }
 
-  private damageMon(m: Mon, base: number, from: THREE.Vector3, knock: number, owner: Actor | null, useStats = true): void {
+  /** Thẻ Cuồng Huyết: đang dưới 40% máu. */
+  private berserking(a: Actor): boolean {
+    return a.stats.berserk > 0 && a.hp < a.stats.maxHp * 0.4;
+  }
+
+  /** Thời gian hồi đòn đánh thường (gồm tiến hóa Muôi Canh và Cuồng Huyết). */
+  private attackCd(a: Actor): number {
+    const w = a.stats.weapon;
+    const rate = a.stats.atkSpeed * (this.berserking(a) ? 1 + 0.2 * a.stats.berserk : 1);
+    return (w.cd * (w.id === 'muoi_canh' && this.evo(a) ? 0.8 : 1)) / rate;
+  }
+
+  /**
+   * proc: đòn đánh thường của vũ khí (cận chiến hoặc đạn) nên được kích hoạt hiệu ứng thẻ khi trúng
+   * (Lôi Điểu, Hỏa Ấn, Băng Tâm). Sát thương từ chiêu, thiêu đốt, sét lan... không kích hoạt để tránh dây chuyền vô hạn.
+   */
+  private damageMon(m: Mon, base: number, from: THREE.Vector3, knock: number, owner: Actor | null, useStats = true, proc = false): void {
     if (m.dead) return;
     const o = owner ?? this.me;
     let dmg = base * (useStats ? this.dealMultiplier(owner) : 1) * (0.9 + Math.random() * 0.2);
     const crit = useStats && Math.random() < o.stats.crit;
     if (crit) dmg *= (o.stats.critDmgMul ?? 2);
+    if (useStats && o.stats.eliteDmg > 0 && (m.affix || m.def.boss)) dmg *= 1 + o.stats.eliteDmg;
     if (m.affix === 4) dmg *= 0.65;
     dmg = Math.max(1, Math.round(dmg));
     m.hp -= dmg;
+    if (proc) this.onHitProcs(m, base, o);
     if (o.alive && (o.stats.lifesteal ?? 0) > 0 && Math.random() < 0.45) {
       const heal = Math.max(1, Math.round(dmg * o.stats.lifesteal));
       o.hp = Math.min(o.stats.maxHp, o.hp + heal);
@@ -1724,6 +1768,27 @@ export class Arena {
     this.playSfx('hit');
     this.showBar(m);
     if (m.hp <= 0) this.killMon(m, o);
+  }
+
+  /** Hiệu ứng thẻ khi đòn đánh thường trúng quái. */
+  private onHitProcs(m: Mon, base: number, o: Actor): void {
+    const s = o.stats;
+    if (s.burnChance > 0 && Math.random() < s.burnChance) this.applyBurn(m, 3, o);
+    if (s.chillChance > 0 && Math.random() < s.chillChance) {
+      this.applySlow(m, 1.5, 0.65);
+      this.burst(m.pos.clone().setY(1), 0xa8e0ff, 4, 3, 0.7);
+    }
+    if (s.chainChance > 0 && Math.random() < s.chainChance) {
+      const targets = this.mons
+        .filter((x) => x !== m && !x.dead && x.pos.distanceTo(m.pos) < 7)
+        .sort((a, b) => a.pos.distanceTo(m.pos) - b.pos.distanceTo(m.pos))
+        .slice(0, 3);
+      for (const t of targets) {
+        this.burst(t.pos.clone().setY(1.3), 0x9ad8ff, 6, 5, 0.8);
+        this.damageMon(t, base * 0.5, m.pos, 1, o);
+      }
+      if (targets.length) this.burst(m.pos.clone().setY(1.3), 0xe8f4ff, 8, 6, 0.9);
+    }
   }
 
   private showBar(m: Mon): void {
@@ -1772,6 +1837,16 @@ export class Arena {
       this.addShake(0.4);
       for (const pl of this.actors.values()) {
         if (pl.alive && pl.pos.distanceTo(at) < 4) this.hurtActor(pl, def.atk * m.dmgMul * 1.8, at);
+      }
+    }
+    if (owner.stats.deathBlast > 0) {
+      // Bộc Phá Hồn: giới hạn theo màn để hạ boss không xóa sổ cả bãi quái
+      const at = m.pos.clone();
+      const blast = Math.min(m.maxHp * owner.stats.deathBlast, 120 + 25 * this.wave);
+      this.ring(at, 3.8, 0xff5a3a, 0.4);
+      this.burst(at.clone().setY(0.8), 0xff7a3a, 14, 7, 1);
+      for (const o of this.mons) {
+        if (o !== m && !o.dead && o.pos.distanceTo(at) < 3.8 + o.def.radius) this.damageMon(o, blast, at, 4, owner, false);
       }
     }
     const color = def.color ?? (def.id === 'ghost' ? 0xaaccff : def.id === 'zombie' ? 0x7ea36e : def.id === 'dragon' ? 0xff6a2a : def.id === 'vampire' ? 0x901020 : 0xe8e0c8);
@@ -1862,7 +1937,7 @@ export class Arena {
   private clientAttack(a: Actor): void {
     if (this.time < a.atkReady || a.dashT > 0 || a.spinT > 0 || !a.alive) return;
     const w = a.stats.weapon;
-    a.atkReady = this.time + (w.cd * (w.id === 'muoi_canh' && this.evo(a) ? 0.8 : 1)) / a.stats.atkSpeed;
+    a.atkReady = this.time + this.attackCd(a);
     const d = this.aimDir(a);
     a.yaw = Math.atan2(d.x, d.z);
     const an = this.animFor(w.kind);
@@ -1875,7 +1950,7 @@ export class Arena {
   private tryAttack(a: Actor): void {
     if (this.time < a.atkReady || a.dashT > 0 || a.spinT > 0 || !a.alive) return;
     const w = a.stats.weapon;
-    a.atkReady = this.time + (w.cd * (w.id === 'muoi_canh' && this.evo(a) ? 0.8 : 1)) / a.stats.atkSpeed;
+    a.atkReady = this.time + this.attackCd(a);
     const d = this.aimDir(a);
     a.yaw = Math.atan2(d.x, d.z);
     sfx.swing();
@@ -1908,7 +1983,7 @@ export class Arena {
             const ang = Math.abs(Math.atan2(v.x, v.z) - Math.atan2(dir.x, dir.z));
             const wrap = Math.min(ang, Math.PI * 2 - ang);
             if (wrap < Math.PI * 0.6 || dist < 1.8) {
-              this.damageMon(m, w.dmg, origin, w.knock, a);
+              this.damageMon(m, w.dmg, origin, w.knock, a, true, true);
               if (!m.dead) this.applyStun(m, stunSec);
             }
           }
@@ -1935,7 +2010,7 @@ export class Arena {
           this.playSfx('boom');
           for (const m of this.mons) {
             if (m.dead || m.pos.distanceTo(a.pos) >= R + m.def.radius) continue;
-            this.damageMon(m, w.dmg * dmgMul, a.pos, w.knock, a);
+            this.damageMon(m, w.dmg * dmgMul, a.pos, w.knock, a, true, true);
             if (!m.dead) this.applySlow(m, 2, slowMul);
           }
         };
@@ -1972,7 +2047,7 @@ export class Arena {
             this.ring(best.pos, 2.2, 0xffd24a, 0.4);
             this.addShake(0.55);
           }
-          this.damageMon(best, w.dmg * (crit ? (cb ? 3 : 2.5) : 1), a.pos, w.knock * (crit ? 2 : 1), a);
+          this.damageMon(best, w.dmg * (crit ? (cb ? 3 : 2.5) : 1), a.pos, w.knock * (crit ? 2 : 1), a, true, true);
         });
         break;
       }
@@ -2237,11 +2312,12 @@ export class Arena {
     }
     const w = this.wave;
     const n = this.actors.size;
-    const hpMul = (1 + 0.14 * (w - 1)) * (1 + 0.6 * (n - 1));
+    const sc = monsterScaling(w, n);
+    const hpMul = sc.hp;
     const mon: Mon = {
       id: this.nextId++, def, rig, hp: def.hp * hpMul, maxHp: def.hp * hpMul, pos: new THREE.Vector3(x, 0, z), kb: new THREE.Vector3(), yaw: 0, phase: Math.random() * 6,
       atkReady: this.time + 1, windup: 0, flashUntil: 0, spawnAt: this.time, t1: this.time + 2 + Math.random() * 3, t2: this.time + 4, stopUntil: 0,
-      leapEnd: 0, leapDir: new THREE.Vector3(), leapHit: false, stunUntil: 0, fearUntil: 0, slowUntil: 0, slowMul: 0.4, bleedUntil: 0, bleedTick: 0, bleedPct: 0, bleedOwner: null, burnUntil: 0, burnTick: 0, burnOwner: null, goldMarkUntil: 0, affix: 0, dmgMul: 1 + 0.06 * (w - 1), speedMul: 1 + Math.min(0.25, 0.01 * (w - 1)), baseScale: rig.group.scale.x, dead: false,
+      leapEnd: 0, leapDir: new THREE.Vector3(), leapHit: false, stunUntil: 0, fearUntil: 0, slowUntil: 0, slowMul: 0.4, bleedUntil: 0, bleedTick: 0, bleedPct: 0, bleedOwner: null, burnUntil: 0, burnTick: 0, burnOwner: null, goldMarkUntil: 0, affix: 0, dmgMul: sc.dmg, speedMul: sc.speed, baseScale: rig.group.scale.x, dead: false,
     };
     if (this.has('cuong_no')) mon.speedMul *= 1.2;
     if (this.has('giap_sat')) {
@@ -2320,6 +2396,7 @@ export class Arena {
   }
 
   private nextWave(): void {
+    this.collectLeftovers();
     this.wave++;
     this.waveState = 'intro';
     this.stateT = 2.4;
@@ -2351,6 +2428,19 @@ export class Arena {
     this.hud.hint('');
   }
 
+  /**
+   * Vàng còn nằm trên sàn khi sang màn mới được tự động cộng cho người chơi gần nhất (bánh chưng thì bỏ),
+   * nếu không chúng sẽ nằm lại ở bản đồ kế tiếp.
+   */
+  private collectLeftovers(): void {
+    let mine = 0;
+    this.dropSystem.collectAll((p) => this.nearestActor(p) ?? this.me, (a, v) => {
+      this.creditGold(a, v);
+      if (a.local) mine += v;
+    });
+    if (mine > 0) this.popAt(this.me.pos, `+${mine} vàng còn sót`, 'heal', 3.2);
+  }
+
   private updateWave(dt: number): void {
     if (this.waveState === 'intro') {
       this.stateT -= dt;
@@ -2359,10 +2449,11 @@ export class Arena {
     }
     if (this.waveState === 'fight') {
       this.spawnTimer -= dt;
-      if (this.spawnTimer <= 0 && this.queue.length > 0 && this.mons.filter((m) => !m.dead).length < 26 + 6 * (this.actors.size - 1)) {
-        const n = this.wave > 6 || this.actors.size > 2 ? 2 : 1;
+      const pace = spawnPacing(this.wave, this.actors.size);
+      if (this.spawnTimer <= 0 && this.queue.length > 0 && this.mons.filter((m) => !m.dead).length < pace.maxAlive) {
+        const n = pace.perTick;
         for (let i = 0; i < n && this.queue.length > 0; i++) this.spawnMon(this.queue.shift()!);
-        this.spawnTimer = 0.55;
+        this.spawnTimer = pace.interval;
       }
       if (this.queue.length === 0 && this.mons.every((m) => m.dead)) this.beginBreak();
       return;
@@ -2989,6 +3080,7 @@ export class Arena {
 
     if (this.waveState === 'break' && !this.has('kiet_suc')) for (const a of this.actors.values()) if (a.alive) a.hp = Math.min(a.stats.maxHp, a.hp + dt * 2);
     for (const a of this.actors.values()) if (a.alive && a.stats.regen > 0) a.hp = Math.min(a.stats.maxHp, a.hp + a.stats.regen * dt);
+    this.updateAegis();
     this.dirty += dt;
     if (this.dirty > 1.5) this.flushSave();
 
@@ -3236,6 +3328,8 @@ export class Arena {
     if (!es || !a.alive || this.time < a.eReady) return;
     a.eReady = this.time + es.cd * (a.stats.eCdMul ?? 1);
     this.popAt(a.pos, es.name, 'crit', 3.6);
+    // Hệ số sức mạnh E từ thẻ Khai Sơn Trận
+    const ed = a.stats.eDmgMul;
     this.playSfx('boom');
     const near = (p: THREE.Vector3, r: number): Mon[] => this.mons.filter((m) => !m.dead && m.pos.distanceTo(p) < r + m.def.radius);
     const dir = this.aimDir(a);
@@ -3247,7 +3341,7 @@ export class Arena {
         for (const { m, t } of this.inRect(from, dir, es.range, es.size ?? 6.5)) {
           this.later(t / 24, () => {
             if (m.dead) return;
-            this.damageMon(m, 90, from, 6, a);
+            this.damageMon(m, 90 * ed, from, 6, a);
             if (!m.dead) this.applyBurn(m, 3, a);
           });
         }
@@ -3256,7 +3350,7 @@ export class Arena {
           this.addShake(0.5);
           for (const m of near(boomPt, 6.5)) {
             if (m.dead) continue;
-            this.damageMon(m, 70, boomPt, 8, a);
+            this.damageMon(m, 70 * ed, boomPt, 8, a);
             if (!m.dead) this.applyBurn(m, 3, a);
           }
         });
@@ -3268,7 +3362,7 @@ export class Arena {
         for (const { m, t } of this.inRect(from, dir, es.range, es.size ?? 6.0)) {
           this.later(t / 55, () => {
             if (m.dead) return;
-            this.damageMon(m, 85, from, 8, a);
+            this.damageMon(m, 85 * ed, from, 8, a);
             if (!m.dead) this.applyBurn(m, 3, a);
           });
         }
@@ -3278,7 +3372,7 @@ export class Arena {
           this.burst(boomPt.clone().setY(1.2), 0xff3b00, 36, 12, 1.4);
           for (const m of near(boomPt, 6.5)) {
             if (m.dead) continue;
-            this.damageMon(m, 75, boomPt, 10, a);
+            this.damageMon(m, 75 * ed, boomPt, 10, a);
             if (!m.dead) this.applyBurn(m, 3, a);
           }
         });
@@ -3286,14 +3380,14 @@ export class Arena {
       }
       case 'le_loi':
         a.guardUntil = this.time + 6;
-        a.shield = Math.round(a.stats.maxHp * 0.45);
+        a.shield = Math.round(a.stats.maxHp * 0.35 * ed);
         a.shieldUntil = this.time + 6;
         this.emitE('le_loi', from.x, from.z, dir.x, dir.z);
         this.addShake(0.5);
         this.ring(a.pos, 5.0, 0xffd700, 0.7);
         for (const m of near(a.pos, 5.0)) {
           if (m.dead) continue;
-          this.damageMon(m, 60, a.pos, 10, a);
+          this.damageMon(m, 60 * ed, a.pos, 10, a);
           if (!m.dead) this.applyStun(m, 0.8);
         }
         break;
@@ -3323,7 +3417,7 @@ export class Arena {
           }
           this.later(d / 28, () => {
             if (m.dead) return;
-            this.damageMon(m, 65 + 75 * ch, from, 15 + 15 * ch, a);
+            this.damageMon(m, (65 + 75 * ch) * ed, from, 15 + 15 * ch, a);
           });
         }
         break;
@@ -3334,7 +3428,7 @@ export class Arena {
         for (const { m, t } of this.inRect(from, dir, es.range, es.size ?? 5.5)) {
           this.later(t / 22, () => {
             if (m.dead) return;
-            this.damageMon(m, 95, from, 8, a);
+            this.damageMon(m, 95 * ed, from, 8, a);
             if (m.dead) return;
             this.applyStun(m, 1.4);
             m.airUntil = this.time + 1.1;
@@ -3348,7 +3442,7 @@ export class Arena {
           for (const { m, t } of this.inRect(from, dir, es.range, es.size ?? 2.4)) {
             this.later(i * 0.18 + t / 32, () => {
               if (m.dead) return;
-              this.damageMon(m, 30, from, 1.5, a);
+              this.damageMon(m, 45 * ed, from, 1.5, a);
               if (m.dead) return;
               const n = (this.shaken.get(m) ?? 0) + 1;
               if (n >= 3) {
@@ -3373,7 +3467,7 @@ export class Arena {
           this.addShake(0.8);
           this.burst(c.clone().setY(0.6), 0x8ac84a, 30, 10, 1.1);
           for (const m of near(c, r)) {
-            this.damageMon(m, 110, c, 6, a);
+            this.damageMon(m, 110 * ed, c, 6, a);
             if (!m.dead) this.applyStun(m, 1.6);
           }
         });
@@ -3528,6 +3622,7 @@ export class Arena {
         a.dashSeq = n(d.dash);
         a.invulnUntil = Math.max(a.invulnUntil, this.time + 0.35);
         this.ring(a.pos, 1.6, 0xffffff, 0.3);
+        this.dashStrike(a);
       }
       if (n(d.ult) > a.ultSeq) {
         a.ultSeq = n(d.ult);
@@ -3963,7 +4058,7 @@ export class Arena {
             for (const m of this.mons) {
               if (m.dead) continue;
               if (Math.hypot(m.pos.x - pos.x, m.pos.z - pos.z) < m.def.radius + p.radius) {
-                this.damageMon(m, p.dmg, pos, (p.owner ?? this.me).stats.weapon.knock, p.owner);
+                this.damageMon(m, p.dmg, pos, (p.owner ?? this.me).stats.weapon.knock, p.owner, true, true);
                 remove = true;
                 break;
               }
@@ -4003,7 +4098,7 @@ export class Arena {
             if (m.dead || p.hit.has(m)) continue;
             if (Math.hypot(m.pos.x - p.obj.position.x, m.pos.z - p.obj.position.z) < m.def.radius + p.radius) {
               p.hit.add(m);
-              this.damageMon(m, p.dmg, p.obj.position, owner.stats.weapon.knock, p.owner);
+              this.damageMon(m, p.dmg, p.obj.position, owner.stats.weapon.knock, p.owner, true, true);
               this.onWeaponHit(m, owner, p.obj.position);
             }
           }
@@ -4025,7 +4120,7 @@ export class Arena {
               if (m.dead || p.hit.has(m)) continue;
               if (Math.hypot(m.pos.x - pos.x, m.pos.z - pos.z) < m.def.radius + p.radius) {
                 p.hit.add(m);
-                this.damageMon(m, p.dmg, pos, owner.stats.weapon.knock, p.owner);
+                this.damageMon(m, p.dmg, pos, owner.stats.weapon.knock, p.owner, true, true);
                 this.onWeaponHit(m, owner, pos);
                 if (p.hit.size >= (p.maxHit ?? 99)) {
                   remove = true;
@@ -4153,7 +4248,7 @@ export class Arena {
     const a = this.me;
     this.hud.setHp(a.hp, a.stats.maxHp);
     const w = a.stats.weapon;
-    const atkCd = w.cd / a.stats.atkSpeed;
+    const atkCd = this.attackCd(a);
     const dashCd = 2.2 * (a.stats.dashCdMul ?? 1);
     const ultCd = a.stats.general.ultCd * a.stats.ultCdMul;
     const eCd = (ESKILLS[a.stats.general.id]?.cd ?? 10) * (a.stats.eCdMul ?? 1);
@@ -4489,8 +4584,24 @@ export class Arena {
     }
   }
 
+  /** Thẻ Kim Cang Thuẫn: cứ 8 giây làm mới lá chắn (không cộng dồn quá mức lá chắn của thẻ). */
+  private updateAegis(): void {
+    for (const a of this.actors.values()) {
+      if (!a.alive || a.stats.aegis <= 0) continue;
+      if (a.aegisAt === undefined) a.aegisAt = this.time;
+      if (this.time < a.aegisAt) continue;
+      a.aegisAt = this.time + 8;
+      const amount = Math.round(a.stats.maxHp * a.stats.aegis);
+      if (a.shield >= amount && this.time < a.shieldUntil) continue;
+      a.shield = Math.max(this.time < a.shieldUntil ? a.shield : 0, amount);
+      a.shieldUntil = this.time + 8;
+      this.ring(a.pos, 1.8, 0x9ad0ff, 0.45);
+      this.popAt(a.pos, `Lá chắn ${amount}`, 'heal', 2.6);
+    }
+  }
+
   private makeOffer(a: Actor): void {
-    const ids = pickOffer(a.cards, 3);
+    const ids = pickOffer(a.cards, 3, a.level);
     if (ids.length === 0) {
       a.pendingLevels = 0;
       return;
@@ -4506,7 +4617,7 @@ export class Arena {
       const c = cardById(id);
       if (!c) return [];
       const n = this.me.cards[id] ?? 0;
-      return [{ name: c.name, desc: c.desc, level: n ? `Cấp ${n + 1}/${c.max}` : 'Mới' }];
+      return [{ name: c.name, desc: c.desc, level: n ? `Cấp ${n + 1}/${c.max}` : 'Mới', rarity: c.rarity, icon: c.icon, tag: c.tag, owned: n, max: c.max }];
     });
     if (items.length === 0) return;
     this.offerIds = ids;
@@ -4543,7 +4654,7 @@ export class Arena {
     const parts: string[] = [];
     if (cb) parts.push(`Combo ${cb.name}`);
     if (this.evo(me)) parts.push('Vũ khí tiến hóa ★');
-    parts.push(...CARDS.filter((x) => me.cards[x.id]).map((x) => `${x.name} ×${me.cards[x.id]}`));
+    parts.push(...CARDS.filter((x) => me.cards[x.id]).map((x) => `${x.icon} ${x.name} ×${me.cards[x.id]}`));
     this.hud.setCards(parts.join(' · '));
   }
 
