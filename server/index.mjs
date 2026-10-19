@@ -24,7 +24,13 @@ const MIME = {
   '.svg': 'image/svg+xml',
   '.json': 'application/json',
   '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
   '.ico': 'image/x-icon',
+  '.glb': 'model/gltf-binary',
+  '.txt': 'text/plain; charset=utf-8',
+  '.woff2': 'font/woff2',
 };
 
 const server = createServer((req, res) => {
