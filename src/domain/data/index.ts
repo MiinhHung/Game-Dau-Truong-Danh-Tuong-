@@ -146,13 +146,13 @@ export interface Weapon {
 }
 
 export const WEAPONS: Weapon[] = [
-  { id: 'dep_lao', name: 'Dép Lào Huyền Thoại', desc: 'Tầm xa. Phóng đôi dép lào bay vút ra rồi quay trở về tay như boomerang, xuyên qua mọi quái trên đường đi.', price: 0, tier: 1, kind: 'boomerang', dmg: 26, cd: 0.55, range: 13, radius: 1, knock: 3 },
-  { id: 'ghe_nhua', name: 'Ghế Nhựa Quốc Dân', desc: 'Cận chiến, đánh diện rộng. Mỗi đòn đập ghế xuống đất, gây choáng cả đám quái phía trước khoảng 1 giây.', price: 0, tier: 1, kind: 'slam', dmg: 40, cd: 0.85, range: 3.9, radius: 3.9, knock: 5 },
-  { id: 'non_la', name: 'Nón Lá Phi Tiêu', desc: 'Tầm xa. Phi nón lá xoay tít xuyên qua tối đa 3 quái trên đường bay.', price: 300, tier: 1, kind: 'pierce', dmg: 24, cd: 0.38, range: 20, radius: 0.9, knock: 2 },
-  { id: 'choi_chit', name: 'Chổi Chít', desc: 'Cận chiến, quét một vòng đánh mọi quái xung quanh, đẩy lùi mạnh và làm chậm 2 giây.', price: 450, tier: 2, kind: 'spin', dmg: 32, cd: 0.9, range: 5.8, radius: 5.8, knock: 11 },
-  { id: 'muoi_canh', name: 'Muôi Canh', desc: 'Cận chiến, sát thương chí mạng. Cốc Đầu: 20% xác suất gây chí mạng, sát thương gấp 2,5 lần đòn thường.', price: 550, tier: 2, kind: 'bonk', dmg: 62, cd: 0.6, range: 3.3, radius: 1.8, knock: 4 },
-  { id: 'phong_lon', name: 'Phóng Lợn', desc: 'Tầm vừa đến xa. Phóng chú lợn bay thẳng một đường, đâm xuyên mọi kẻ địch. Trúng đòn là chảy máu: mất máu mỗi giây theo % máu tối đa, cộng dồn, kéo dài tối đa 15 giây.', price: 800, tier: 3, kind: 'pierce', dmg: 46, cd: 1.0, range: 15, radius: 1.1, knock: 4 },
-  { id: 'dieu_cay', name: 'Điếu Cày Long Trượng', desc: 'Tầm xa. Rít một hơi, phả ra cục khói gây sát thương. Say Khói: 15% xác suất làm chậm quái 30% trong 2 giây và gây choáng.', price: 750, tier: 3, kind: 'pierce', dmg: 34, cd: 0.5, range: 17, radius: 1.1, knock: 1 },
+  { id: 'dep_lao', name: 'Dép Lào Huyền Thoại', desc: 'Tầm xa. Phóng đôi dép lào bay vút ra rồi quay trở về tay như boomerang, xuyên qua mọi quái trên đường đi.', price: 0, tier: 1, kind: 'boomerang', dmg: 22, cd: 0.55, range: 13, radius: 1, knock: 3 },
+  { id: 'ghe_nhua', name: 'Ghế Nhựa Quốc Dân', desc: 'Cận chiến, đánh diện rộng. Mỗi đòn đập ghế xuống đất, gây choáng cả đám quái phía trước khoảng 1 giây.', price: 0, tier: 1, kind: 'slam', dmg: 34, cd: 0.85, range: 3.9, radius: 3.9, knock: 5 },
+  { id: 'non_la', name: 'Nón Lá Phi Tiêu', desc: 'Tầm xa. Phi nón lá xoay tít xuyên qua tối đa 3 quái trên đường bay.', price: 300, tier: 1, kind: 'pierce', dmg: 20, cd: 0.38, range: 20, radius: 0.9, knock: 2 },
+  { id: 'choi_chit', name: 'Chổi Chít', desc: 'Cận chiến, quét một vòng đánh mọi quái xung quanh, đẩy lùi mạnh và làm chậm 2 giây.', price: 450, tier: 2, kind: 'spin', dmg: 27, cd: 0.9, range: 5.8, radius: 5.8, knock: 11 },
+  { id: 'muoi_canh', name: 'Muôi Canh', desc: 'Cận chiến, sát thương chí mạng. Cốc Đầu: 20% xác suất gây chí mạng, sát thương gấp 2,5 lần đòn thường.', price: 550, tier: 2, kind: 'bonk', dmg: 53, cd: 0.6, range: 3.3, radius: 1.8, knock: 4 },
+  { id: 'phong_lon', name: 'Phóng Lợn', desc: 'Tầm vừa đến xa. Phóng chú lợn bay thẳng một đường, đâm xuyên mọi kẻ địch. Trúng đòn là chảy máu: mất máu mỗi giây theo % máu tối đa, cộng dồn, kéo dài tối đa 15 giây.', price: 800, tier: 3, kind: 'pierce', dmg: 39, cd: 1.0, range: 15, radius: 1.1, knock: 4 },
+  { id: 'dieu_cay', name: 'Điếu Cày Long Trượng', desc: 'Tầm xa. Rít một hơi, phả ra cục khói gây sát thương. Say Khói: 15% xác suất làm chậm quái 30% trong 2 giây và gây choáng.', price: 750, tier: 3, kind: 'pierce', dmg: 29, cd: 0.5, range: 17, radius: 1.1, knock: 1 },
 ];
 
 export const MAX_WEAPON_LEVEL = 5;

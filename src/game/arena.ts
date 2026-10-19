@@ -2396,7 +2396,7 @@ export class Arena {
   }
 
   private nextWave(): void {
-    this.collectLeftovers();
+    this.clearLeftovers();
     this.wave++;
     this.waveState = 'intro';
     this.stateT = 2.4;
@@ -2428,17 +2428,9 @@ export class Arena {
     this.hud.hint('');
   }
 
-  /**
-   * Vàng còn nằm trên sàn khi sang màn mới được tự động cộng cho người chơi gần nhất (bánh chưng thì bỏ),
-   * nếu không chúng sẽ nằm lại ở bản đồ kế tiếp.
-   */
-  private collectLeftovers(): void {
-    let mine = 0;
-    this.dropSystem.collectAll((p) => this.nearestActor(p) ?? this.me, (a, v) => {
-      this.creditGold(a, v);
-      if (a.local) mine += v;
-    });
-    if (mine > 0) this.popAt(this.me.pos, `+${mine} vàng còn sót`, 'heal', 3.2);
+  /** Sang màn mới thì xóa hết vàng và bánh chưng còn nằm trên sàn màn cũ (không cộng cho ai). */
+  private clearLeftovers(): void {
+    this.dropSystem.clear();
   }
 
   private updateWave(dt: number): void {
@@ -4219,7 +4211,7 @@ export class Arena {
       nearestActor: (p) => this.nearestActor(p),
       creditGold: (near, val) => this.creditGold(near, val),
       onHeal: (near, val) => {
-        const heal = Math.round(near.stats.maxHp * val);
+        const heal = Math.round(val);
         near.hp = Math.min(near.stats.maxHp, near.hp + heal);
         this.popAt(near.pos, `+${heal}`, 'heal', 2.4);
       },

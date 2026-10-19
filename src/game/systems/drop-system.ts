@@ -5,7 +5,7 @@ import type { Actor, Coin } from '../types';
 export interface DropCallbacks {
   nearestActor(p: THREE.Vector3): Actor | null;
   creditGold(a: Actor, amount: number): void;
-  onHeal(a: Actor, amountRatio: number): void;
+  onHeal(a: Actor, amount: number): void;
 }
 
 /**
@@ -25,15 +25,6 @@ export class DropSystem {
 
   clear(): void {
     for (const c of this.coins) {
-      this.scene.remove(c.mesh);
-    }
-    this.coins = [];
-  }
-
-  /** Cộng hết vàng đang nằm trên sàn cho người nhận do pick chọn, rồi dọn sạch (bánh chưng bị bỏ). */
-  collectAll(pick: (p: THREE.Vector3) => Actor, credit: (a: Actor, amount: number) => void): void {
-    for (const c of this.coins) {
-      if (!c.heal) credit(pick(c.mesh.position), c.value);
       this.scene.remove(c.mesh);
     }
     this.coins = [];
@@ -62,7 +53,7 @@ export class DropSystem {
       id: this.nextId++,
       mesh,
       vel: new THREE.Vector3((Math.random() - 0.5) * 3, 6, (Math.random() - 0.5) * 3),
-      value: 0.3,
+      value: 20,
       age: 0,
       heal: true,
     });
